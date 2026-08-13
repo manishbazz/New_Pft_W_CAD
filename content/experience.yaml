@@ -1,0 +1,21 @@
+experience:
+  - id: role-1
+    role: Software Engineer
+    company: Example Corp
+    location: Remote
+    start: "2023"
+    end: Present
+    bullets:
+      - Built and shipped product features across the stack.
+      - Collaborated with design and product on polished UI.
+      - Improved reliability with better testing and observability.
+
+  - id: role-2
+    role: Intern
+    company: Startup Labs
+    location: Hybrid
+    start: "2022"
+    end: "2023"
+    bullets:
+      - Prototyped internal tools and dashboards.
+      - Wrote documentation and onboarding notes for the team.

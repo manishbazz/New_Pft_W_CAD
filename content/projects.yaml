@@ -1,0 +1,26 @@
+projects:
+  sample-a:
+    title: Sample Project A
+    summary: A placeholder project with description and doc link.
+    description: |
+      This is sample project A. Replace this copy with your real write-up.
+
+      The preview pane can show this description, a 3D model, or open a Google Doc.
+    model: model.glb
+    doc: https://docs.google.com/document/d/example
+
+  sample-b:
+    title: Sample Project B
+    summary: Description-only project (no 3D model yet).
+    description: |
+      Sample B has no GLB. Selecting it falls back to the description view.
+      Add a model.glb under content/projects/sample-b and reference it in projects.yaml when ready.
+    doc: https://docs.google.com/document/d/example-b
+
+  sample-c:
+    title: Sample Project C
+    summary: Model-focused placeholder without a doc link.
+    description: |
+      Sample C demonstrates the 3D preview path. Drop your GLB at
+      public/projects/sample-c/model.glb (or sync from content/projects/sample-c/).
+    model: model.glb
