@@ -1,26 +1,52 @@
 projects:
-  sample-a:
-    title: Sample Project A
-    summary: A placeholder project with description and doc link.
+  suparna-drone:
+    title: Suparna Drone
+    summary: Drone designed for Menthosa Solutions, supplied to IIT Gandhinagar and BITS Pilani.
     description: |
-      This is sample project A. Replace this copy with your real write-up.
+      Designed a drone for Menthosa Solutions which was supplied to well-reputed
+      institutes in India. Key challenges included overheating, fitting, and
+      structural integrity of the drone.
+    doc: https://menthosa.com/products/suparna
 
-      The preview pane can show this description, a 3D model, or open a Google Doc.
-    model: model.glb
-    doc: https://docs.google.com/document/d/example
-
-  sample-b:
-    title: Sample Project B
-    summary: Description-only project (no 3D model yet).
+  drone-charger:
+    title: Drone Charger
+    summary: Battery charger for the Suparna Drone with thermal-optimized fan placement.
     description: |
-      Sample B has no GLB. Selecting it falls back to the description view.
-      Add a model.glb under content/projects/sample-b and reference it in projects.yaml when ready.
-    doc: https://docs.google.com/document/d/example-b
+      Designed a drone battery charger for the Suparna Drone. One of the main
+      thermal problems was the position of the cooling fan — Ansys Icepak was
+      used to determine the optimal fan position.
+    doc: "https://docs.google.com/document/d/1c86K6fzZKybqeY_gTJ7ihEwocNIKFXn8/edit?usp=drive_link&ouid=100455715208712223028&rtpof=true&sd=true"
 
-  sample-c:
-    title: Sample Project C
-    summary: Model-focused placeholder without a doc link.
+  diesel-filter-cutter:
+    title: Diesel Filter Tube Cutting Machine
+    summary: Machine for smoothly cutting thick paper tube sections for car diesel filters.
     description: |
-      Sample C demonstrates the 3D preview path. Drop your GLB at
-      public/projects/sample-c/model.glb (or sync from content/projects/sample-c/).
-    model: model.glb
+      A machine was built to smoothly cut sections of thick paper tubes used in
+      a car diesel filter. Main challenges were achieving a smooth cut and
+      reducing machine vibration.
+
+  airfoil-shape-optimization:
+    title: Airfoil Shape Optimization Using Reinforcement Learning
+    summary: ML-driven shape optimization of a diamond-shaped airfoil (in progress).
+    description: |
+      Shape optimization of a diamond-shaped airfoil using ML. Requires building
+      a high-accuracy pressure-based CFD model in Ansys Fluent, then using the
+      CFD result (lift-to-drag coefficient) as a reward signal with airfoil
+      dimensions as the target variables.
+    doc: "https://docs.google.com/document/d/1TDga0UedJ3nlezBwUNBzgezcxJIn3PHB/edit?usp=sharing&ouid=100455715208712223028&rtpof=true&sd=true"
+
+  indoor-drone:
+    title: Indoor Drone
+    summary: Indoor drone with LIDAR-based obstacle avoidance.
+    description: |
+      Built an indoor drone with obstacle avoidance. The main task was
+      determining the fitting and orientation of the LIDAR sensor used for
+      obstacle avoidance.
+
+  aerothon-2024:
+    title: Aerothon 2024
+    summary: Drone design for Aerothon 2024 — National Rank 2, SAE India.
+    description: |
+      Designed a drone for Aerothon 2024 (SAE India). The computational
+      analysis report helped the team secure a strong placement in Phase 1.
+    doc: "https://drive.google.com/file/d/15rCEtsd_LoMRu4OLSv74_LjGZ9_NkVVS/view?usp=drive_link"

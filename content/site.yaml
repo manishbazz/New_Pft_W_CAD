@@ -1,11 +1,11 @@
-name: Manish
-designation: Software Engineer
+name: Manish Kumar Sharma
+designation: Mechanical Design Engineer
 contactEmail: hello@example.com
 defaultModel: /models/default.glb
 links:
   - label: GitHub
-    href: https://github.com
+    href: https://github.com/manishbazz
   - label: LinkedIn
-    href: https://linkedin.com
+    href: https://www.linkedin.com/in/manish-kumar-sharma-04941a253/
   - label: Email
     href: mailto:hello@example.com

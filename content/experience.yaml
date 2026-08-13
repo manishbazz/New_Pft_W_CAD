@@ -1,21 +1,38 @@
 experience:
-  - id: role-1
-    role: Software Engineer
-    company: Example Corp
-    location: Remote
-    start: "2023"
+  - id: menthosa-solutions
+    role: Mechanical Design Engineer
+    company: Menthosa Solutions
+    location: Chandigarh, India
+    start: "Sep 2023"
     end: Present
     bullets:
-      - Built and shipped product features across the stack.
-      - Collaborated with design and product on polished UI.
-      - Improved reliability with better testing and observability.
+      - Designed the Suparna drone, supplied to institutes including IIT Gandhinagar and BITS Pilani.
+      - Worked through overheating, fitting, and structural integrity issues during development.
+      - Designed a drone battery charger, using Ansys Icepak to optimize fan placement for thermal performance.
 
-  - id: role-2
+  - id: oef-intern
     role: Intern
-    company: Startup Labs
-    location: Hybrid
-    start: "2022"
-    end: "2023"
+    company: Opto Electronics Factory (OEF), Dehradun
+    location: Dehradun, India
+    start: "Jul 2023"
+    end: "Jul 2023"
     bullets:
-      - Prototyped internal tools and dashboards.
-      - Wrote documentation and onboarding notes for the team.
+      - Worked in the CNC and Quality departments at Opto Electronics Factory.
+
+  - id: uiet-mechanical
+    role: Mechanical Engineering (BE, Lateral Entry)
+    company: UIET, Chandigarh
+    location: Chandigarh, India
+    start: "Sep 2022"
+    end: Present
+    bullets:
+      - Started BE in Mechanical Engineering at UIET via lateral entry.
+
+  - id: gpd-diploma
+    role: Diploma, Mechanical (Automobile)
+    company: Government Polytechnic, Dehradun
+    location: Dehradun, India
+    start: "2019"
+    end: "Sep 2022"
+    bullets:
+      - Completed diploma in Mechanical (Automobile) Engineering.
