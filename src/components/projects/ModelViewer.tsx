@@ -47,7 +47,7 @@ function GlbModel({ url }: { url: string }) {
   );
 }
 
-class ModelErrorBoundary extends Component
+class ModelErrorBoundary extends Component<
   { fallback: ReactNode; children: ReactNode },
   { hasError: boolean }
 > {
