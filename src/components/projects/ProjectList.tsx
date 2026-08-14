@@ -28,9 +28,9 @@ export function ProjectList({
               }}
               onMouseEnter={playHoverTick}
               className={[
-                "flex w-full origin-left flex-col items-start gap-1 px-1 py-4 text-left",
-                "transition-[color,transform] duration-150 ease-out",
-                "hover:translate-x-1.5 hover:scale-[1.015]",
+                "flex w-full origin-left flex-col items-start gap-1 rounded-md border border-transparent px-3 py-4 text-left",
+                "transition-[color,transform,border-color] duration-150 ease-out",
+                "hover:translate-x-1.5 hover:scale-[1.015] hover:border-[var(--border)]",
                 selected
                   ? "text-[var(--text)]"
                   : "text-[var(--muted)] hover:text-[var(--text)]",
