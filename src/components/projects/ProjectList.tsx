@@ -1,6 +1,7 @@
 "use client";
 
 import type { ProjectEntry } from "@/lib/types";
+import { playClickTick, playHoverTick } from "@/lib/uiSound";
 
 type ProjectListProps = {
   projects: ProjectEntry[];
@@ -21,9 +22,15 @@ export function ProjectList({
           <li key={project.id}>
             <button
               type="button"
-              onClick={() => onSelect(project.id)}
+              onClick={() => {
+                playClickTick();
+                onSelect(project.id);
+              }}
+              onMouseEnter={playHoverTick}
               className={[
-                "flex w-full flex-col items-start gap-1 px-1 py-4 text-left transition-colors",
+                "flex w-full origin-left flex-col items-start gap-1 px-1 py-4 text-left",
+                "transition-[color,transform] duration-150 ease-out",
+                "hover:translate-x-1.5 hover:scale-[1.015]",
                 selected
                   ? "text-[var(--text)]"
                   : "text-[var(--muted)] hover:text-[var(--text)]",
