@@ -6,7 +6,7 @@ projects:
       Designed a drone for Menthosa Solutions which was supplied to well-reputed
       institutes in India. Key challenges included overheating, fitting, and
       structural integrity of the drone.
-    model: public/projects/suparna-drone/suparna.glb
+    model: suparna.glb
     doc: https://menthosa.com/products/suparna
 
   drone-charger:
