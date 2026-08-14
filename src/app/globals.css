@@ -69,3 +69,56 @@ body {
 .dot-glow {
   animation: dot-glow 1.8s ease-in-out infinite;
 }
+
+/* Home page intro: bold scale-in with slight overshoot, like a logo bump. */
+@keyframes intro-punch {
+  0% {
+    opacity: 0;
+    transform: scale(1.5);
+    filter: blur(6px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.97);
+    filter: blur(0);
+  }
+  80% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-intro-punch {
+  animation: intro-punch 700ms cubic-bezier(0.19, 1, 0.22, 1) both;
+}
+
+/* Quick white flash on impact. */
+@keyframes intro-flash {
+  0% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-intro-flash {
+  animation: intro-flash 450ms ease-out forwards;
+}
+
+/* Accent underline sweeping in under the name. */
+@keyframes intro-underline {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.animate-intro-underline {
+  transform-origin: center;
+  animation: intro-underline 500ms cubic-bezier(0.65, 0, 0.35, 1) 350ms both;
+}

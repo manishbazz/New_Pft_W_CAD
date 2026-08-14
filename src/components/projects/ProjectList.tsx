@@ -15,7 +15,7 @@ export function ProjectList({
   onSelect,
 }: ProjectListProps) {
   return (
-    <ul className="divide-y divide-[var(--border)]">
+    <ul className="flex flex-col gap-2">
       {projects.map((project) => {
         const selected = project.id === selectedId;
         return (
