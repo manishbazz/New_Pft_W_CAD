@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 type Particle = {
-  x: number; // normalized 0..1
+  x: number; // px, relative to canvas
   y: number;
   vx: number;
   vy: number;
@@ -12,22 +12,30 @@ type Particle = {
   phase: number;
 };
 
-const PARTICLE_COUNT = 46;
+const PARTICLE_COUNT = 60;
 const PARTICLE_RGB = "143, 163, 176"; // matches --accent
+const MARGIN = 46; // how far particles can drift past the text's edges
 
-function createParticles(): Particle[] {
-  return Array.from({ length: PARTICLE_COUNT }, () => ({
-    x: Math.random(),
-    y: Math.random(),
-    vx: (Math.random() - 0.5) * 0.0035,
-    vy: -0.002 - Math.random() * 0.003, // gentle upward drift
+type Bounds = { x: number; y: number; width: number; height: number };
+
+type HomeParticlesProps = {
+  /** Element the particle field should hug (e.g. the name/heading). */
+  boundsRef?: RefObject<HTMLElement | null>;
+};
+
+function spawnParticle(bounds: Bounds): Particle {
+  return {
+    x: bounds.x + Math.random() * bounds.width,
+    y: bounds.y + Math.random() * bounds.height,
+    vx: (Math.random() - 0.5) * 0.045,
+    vy: -0.02 - Math.random() * 0.035,
     size: 0.6 + Math.random() * 1.8,
-    baseAlpha: 0.15 + Math.random() * 0.35,
+    baseAlpha: 0.18 + Math.random() * 0.4,
     phase: Math.random() * Math.PI * 2,
-  }));
+  };
 }
 
-export function HomeParticles() {
+export function HomeParticles({ boundsRef }: HomeParticlesProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -39,6 +47,23 @@ export function HomeParticles() {
     let width = 0;
     let height = 0;
     let dpr = 1;
+    let bounds: Bounds = { x: 0, y: 0, width: 0, height: 0 };
+
+    const measureBounds = () => {
+      const target = boundsRef?.current;
+      const canvasRect = canvas.getBoundingClientRect();
+      if (target) {
+        const r = target.getBoundingClientRect();
+        bounds = {
+          x: r.left - canvasRect.left - MARGIN,
+          y: r.top - canvasRect.top - MARGIN,
+          width: r.width + MARGIN * 2,
+          height: r.height + MARGIN * 2,
+        };
+      } else {
+        bounds = { x: 0, y: 0, width, height };
+      }
+    };
 
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -47,11 +72,18 @@ export function HomeParticles() {
       canvas.width = width * dpr;
       canvas.height = height * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      measureBounds();
     };
     resize();
     window.addEventListener("resize", resize);
+    // Re-measure shortly after mount too — web fonts loading can shift the
+    // text's layout size after the very first measurement.
+    const refit = window.setTimeout(measureBounds, 250);
 
-    const particles = createParticles();
+    let particles = Array.from({ length: PARTICLE_COUNT }, () =>
+      spawnParticle(bounds),
+    );
+
     let rafId = 0;
     let start = performance.now();
 
@@ -62,18 +94,22 @@ export function HomeParticles() {
       for (const p of particles) {
         p.x += p.vx;
         p.y += p.vy;
-        // wrap around edges
-        if (p.x < -0.05) p.x = 1.05;
-        if (p.x > 1.05) p.x = -0.05;
-        if (p.y < -0.05) p.y = 1.05;
-        if (p.y > 1.05) p.y = -0.05;
+
+        const left = bounds.x;
+        const right = bounds.x + bounds.width;
+        const top = bounds.y;
+        const bottom = bounds.y + bounds.height;
+
+        if (p.x < left || p.x > right || p.y < top - 10) {
+          Object.assign(p, spawnParticle(bounds), { y: bottom });
+        }
 
         const pulse = 0.75 + 0.25 * Math.sin(elapsed / 1400 + p.phase);
         const alpha = p.baseAlpha * pulse;
 
         ctx.beginPath();
         ctx.fillStyle = `rgba(${PARTICLE_RGB}, ${alpha})`;
-        ctx.arc(p.x * width, p.y * height, p.size, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -83,9 +119,10 @@ export function HomeParticles() {
 
     return () => {
       cancelAnimationFrame(rafId);
+      window.clearTimeout(refit);
       window.removeEventListener("resize", resize);
     };
-  }, []);
+  }, [boundsRef]);
 
   return (
     <canvas

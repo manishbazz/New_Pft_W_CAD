@@ -5,6 +5,7 @@
 // since browsers block audio until the page has been interacted with.
 
 let ctx: AudioContext | null = null;
+let noiseBuffer: AudioBuffer | null = null;
 
 function getContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -25,73 +26,111 @@ export function unlockAudio() {
   getContext();
 }
 
+function getNoiseBuffer(audio: AudioContext): AudioBuffer {
+  if (noiseBuffer) return noiseBuffer;
+  const length = Math.floor(audio.sampleRate * 0.08);
+  const buffer = audio.createBuffer(1, length, audio.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+  noiseBuffer = buffer;
+  return buffer;
+}
+
+function noiseBurst(
+  audio: AudioContext,
+  startAt: number,
+  durationMs: number,
+  peakGain: number,
+  filterFreq: number,
+  filterType: BiquadFilterType = "bandpass",
+) {
+  const noise = audio.createBufferSource();
+  noise.buffer = getNoiseBuffer(audio);
+  const filter = audio.createBiquadFilter();
+  filter.type = filterType;
+  filter.frequency.value = filterFreq;
+  filter.Q.value = 0.8;
+  const gain = audio.createGain();
+  const duration = durationMs / 1000;
+  gain.gain.setValueAtTime(peakGain, startAt);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+  noise.connect(filter).connect(gain).connect(audio.destination);
+  noise.start(startAt);
+  noise.stop(startAt + duration + 0.02);
+}
+
 function tone(
-  frequency: number,
+  audio: AudioContext,
+  startAt: number,
+  freqFrom: number,
+  freqTo: number,
   durationMs: number,
   peakGain: number,
   type: OscillatorType,
-  startAt = 0,
 ) {
-  const audio = getContext();
-  if (!audio) return;
-
   const osc = audio.createOscillator();
   const gain = audio.createGain();
   osc.type = type;
-  osc.frequency.value = frequency;
-
-  const now = audio.currentTime + startAt;
   const duration = durationMs / 1000;
-
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(peakGain, now + 0.004);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
+  osc.frequency.setValueAtTime(freqFrom, startAt);
+  osc.frequency.exponentialRampToValueAtTime(
+    Math.max(freqTo, 1),
+    startAt + duration,
+  );
+  gain.gain.setValueAtTime(0, startAt);
+  gain.gain.linearRampToValueAtTime(peakGain, startAt + 0.004);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
   osc.connect(gain).connect(audio.destination);
-  osc.start(now);
-  osc.stop(now + duration + 0.02);
+  osc.start(startAt);
+  osc.stop(startAt + duration + 0.02);
 }
 
-/** Crisp chiptune cursor blip — square wave, short and punchy. */
+/** Dry, percussive cursor tick — arcade-fighting-game menu feel. */
 export function playHoverTick() {
-  tone(1046, 30, 0.025, "square"); // C6
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  noiseBurst(audio, now, 18, 0.05, 3200, "highpass");
+  tone(audio, now, 1400, 1100, 22, 0.03, "square");
 }
 
-/** Two-note ascending "confirm" chime, classic JRPG menu-select feel. */
+/** Punchy select "stab": bright noise snap + a descending synth hit. */
 export function playClickTick() {
-  tone(784, 55, 0.05, "square"); // G5
-  tone(1175, 90, 0.05, "square", 0.045); // D6, slightly overlapping
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  noiseBurst(audio, now, 30, 0.07, 2400, "bandpass");
+  tone(audio, now, 620, 190, 100, 0.08, "sawtooth");
+  tone(audio, now, 140, 90, 90, 0.05, "sine"); // sub weight
 }
 
-/** Bold logo-impact sting for the home page intro: a bass thump under a rising sweep. */
+/** Slow logo-landing sting: a soft bass swell rising into a gentle shimmer. */
 export function playIntroChime() {
   const audio = getContext();
   if (!audio) return;
   const now = audio.currentTime;
 
-  // Low thump — the "hit".
-  const thump = audio.createOscillator();
-  const thumpGain = audio.createGain();
-  thump.type = "sine";
-  thump.frequency.setValueAtTime(150, now);
-  thump.frequency.exponentialRampToValueAtTime(45, now + 0.22);
-  thumpGain.gain.setValueAtTime(0, now);
-  thumpGain.gain.linearRampToValueAtTime(0.22, now + 0.01);
-  thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
-  thump.connect(thumpGain).connect(audio.destination);
-  thump.start(now);
-  thump.stop(now + 0.35);
+  const swell = audio.createOscillator();
+  const swellGain = audio.createGain();
+  swell.type = "sine";
+  swell.frequency.setValueAtTime(70, now);
+  swell.frequency.exponentialRampToValueAtTime(52, now + 0.9);
+  swellGain.gain.setValueAtTime(0, now);
+  swellGain.gain.linearRampToValueAtTime(0.14, now + 0.5);
+  swellGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.15);
+  swell.connect(swellGain).connect(audio.destination);
+  swell.start(now);
+  swell.stop(now + 1.2);
 
-  // Rising sweep — the "shimmer" landing just after the hit.
-  const sweep = audio.createOscillator();
-  const sweepGain = audio.createGain();
-  sweep.type = "sawtooth";
-  sweep.frequency.setValueAtTime(320, now + 0.03);
-  sweep.frequency.exponentialRampToValueAtTime(1100, now + 0.28);
-  sweepGain.gain.setValueAtTime(0, now + 0.03);
-  sweepGain.gain.linearRampToValueAtTime(0.05, now + 0.06);
-  sweepGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36);
-  sweep.connect(sweepGain).connect(audio.destination);
-  sweep.start(now + 0.03);
-  sweep.stop(now + 0.4);
+  const shimmer = audio.createOscillator();
+  const shimmerGain = audio.createGain();
+  shimmer.type = "triangle";
+  shimmer.frequency.setValueAtTime(260, now + 0.5);
+  shimmer.frequency.exponentialRampToValueAtTime(720, now + 1.15);
+  shimmerGain.gain.setValueAtTime(0, now + 0.5);
+  shimmerGain.gain.linearRampToValueAtTime(0.045, now + 0.75);
+  shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.35);
+  shimmer.connect(shimmerGain).connect(audio.destination);
+  shimmer.start(now + 0.5);
+  shimmer.stop(now + 1.4);
 }

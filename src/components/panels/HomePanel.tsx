@@ -1,22 +1,43 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import type { SiteContent } from "@/lib/types";
 import { HomeParticles } from "@/components/panels/HomeParticles";
+import { playIntroChime } from "@/lib/uiSound";
 
 type HomePanelProps = {
   site: SiteContent;
 };
 
 export function HomePanel({ site }: HomePanelProps) {
+  const nameRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    playIntroChime();
+  }, []);
+
   return (
     <div className="relative flex h-full w-full items-center justify-center px-6 pt-20">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(90,120,140,0.12),transparent_55%),radial-gradient(ellipse_at_80%_80%,rgba(40,50,60,0.35),transparent_50%)]" />
-      <HomeParticles />
-      <div className="animate-home-fade-slow relative max-w-3xl text-center">
+      <HomeParticles boundsRef={nameRef} />
+      <div
+        className="pointer-events-none absolute inset-0 animate-intro-flash-slow bg-[var(--text)]"
+        aria-hidden
+      />
+      <div className="animate-intro-punch-slow relative max-w-3xl text-center">
         <p className="mb-4 text-xs tracking-[0.35em] text-[var(--muted)] uppercase">
           Portfolio
         </p>
-        <h1 className="font-display text-5xl leading-none tracking-tight text-[var(--text)] sm:text-7xl md:text-8xl">
+        <h1
+          ref={nameRef}
+          className="font-display text-5xl leading-none tracking-tight text-[var(--text)] sm:text-7xl md:text-8xl"
+        >
           {site.name}
         </h1>
+        <div
+          className="animate-intro-underline-slow mx-auto mt-4 h-px w-24 bg-[var(--accent)]"
+          aria-hidden
+        />
         <p className="mt-6 text-lg text-[var(--muted)] sm:text-xl">
           {site.designation}
         </p>
