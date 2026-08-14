@@ -2,8 +2,9 @@
 
 import { Canvas } from "@react-three/fiber";
 import { Center, OrbitControls, useGLTF } from "@react-three/drei";
-import { Component, Suspense, type ReactNode } from "react";
+import { Component, Suspense, useMemo, type ReactNode } from "react";
 import * as THREE from "three";
+
 type ModelViewerProps = {
   url?: string;
 };
@@ -22,8 +23,7 @@ function FallbackSculpture() {
   );
 }
 
-function GlbModel({ url }: { url: string }) {
-  // Target size (in scene units) the model's largest dimension is scaled to fit.
+// Target size (in scene units) the model's largest dimension is scaled to fit.
 // Tuned for the fixed camera below (distance 4, fov 42).
 const TARGET_SIZE = 2.6;
 
@@ -47,7 +47,7 @@ function GlbModel({ url }: { url: string }) {
   );
 }
 
-class ModelErrorBoundary extends Component<
+class ModelErrorBoundary extends Component
   { fallback: ReactNode; children: ReactNode },
   { hasError: boolean }
 > {
