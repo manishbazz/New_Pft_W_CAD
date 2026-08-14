@@ -22,7 +22,8 @@ function tone(
   frequency: number,
   durationMs: number,
   peakGain: number,
-  type: OscillatorType = "sine",
+  type: OscillatorType,
+  startAt = 0,
 ) {
   const audio = getContext();
   if (!audio) return;
@@ -32,11 +33,11 @@ function tone(
   osc.type = type;
   osc.frequency.value = frequency;
 
-  const now = audio.currentTime;
+  const now = audio.currentTime + startAt;
   const duration = durationMs / 1000;
 
   gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(peakGain, now + 0.005);
+  gain.gain.linearRampToValueAtTime(peakGain, now + 0.004);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
   osc.connect(gain).connect(audio.destination);
@@ -44,12 +45,13 @@ function tone(
   osc.stop(now + duration + 0.02);
 }
 
-/** Soft, quiet tick for hover — fires often, must stay unobtrusive. */
+/** Crisp chiptune cursor blip — square wave, short and punchy. */
 export function playHoverTick() {
-  tone(1200, 35, 0.03);
+  tone(1046, 30, 0.025, "square"); // C6
 }
 
-/** Slightly fuller click confirmation — fires rarely, can be a touch louder. */
+/** Two-note ascending "confirm" chime, classic JRPG menu-select feel. */
 export function playClickTick() {
-  tone(420, 70, 0.06, "triangle");
+  tone(784, 55, 0.05, "square"); // G5
+  tone(1175, 90, 0.05, "square", 0.045); // D6, slightly overlapping
 }
