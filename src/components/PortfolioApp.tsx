@@ -71,6 +71,24 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
 
   const active = PANEL_IDS[activeIndex];
 
+  // Unlock audio on the very first interaction anywhere on the page, so
+  // hover sounds work right after that instead of only after whichever
+  // element happens to be clicked first (browsers block audio until a
+  // real user gesture has occurred).
+  useEffect(() => {
+    const unlock = () => {
+      void import("@/lib/uiSound").then((mod) => mod.unlockAudio());
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
   useEffect(() => {
     if (!projectsMounted || ProjectsPanel) return;
     let cancelled = false;

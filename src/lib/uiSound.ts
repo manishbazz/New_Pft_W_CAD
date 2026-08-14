@@ -18,6 +18,13 @@ function getContext(): AudioContext | null {
   return ctx;
 }
 
+/** Call from within a real user gesture (click/tap/keydown) as early as
+ * possible on the page, so hover sounds work right away afterward instead
+ * of only unlocking on whichever element happens to be clicked first. */
+export function unlockAudio() {
+  getContext();
+}
+
 function tone(
   frequency: number,
   durationMs: number,
