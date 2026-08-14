@@ -54,9 +54,3 @@ body {
 .animate-content-fade {
   animation: content-fade-in 420ms ease-out;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-content-fade {
-    animation: none;
-  }
-}
