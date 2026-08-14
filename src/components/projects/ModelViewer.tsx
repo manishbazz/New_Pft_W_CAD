@@ -3,7 +3,7 @@
 import { Canvas } from "@react-three/fiber";
 import { Center, OrbitControls, useGLTF } from "@react-three/drei";
 import { Component, Suspense, type ReactNode } from "react";
-
+import * as THREE from "three";
 type ModelViewerProps = {
   url?: string;
 };
@@ -23,10 +23,26 @@ function FallbackSculpture() {
 }
 
 function GlbModel({ url }: { url: string }) {
+  // Target size (in scene units) the model's largest dimension is scaled to fit.
+// Tuned for the fixed camera below (distance 4, fov 42).
+const TARGET_SIZE = 2.6;
+
+function GlbModel({ url }: { url: string }) {
   const { scene } = useGLTF(url);
+  const cloned = useMemo(() => scene.clone(), [scene]);
+
+  const scale = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(cloned);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (!maxDim || !Number.isFinite(maxDim)) return 1;
+    return TARGET_SIZE / maxDim;
+  }, [cloned]);
+
   return (
     <Center>
-      <primitive object={scene.clone()} />
+      <primitive object={cloned} scale={scale} />
     </Center>
   );
 }
