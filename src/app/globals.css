@@ -37,3 +37,26 @@ body {
   background: color-mix(in oklab, var(--accent) 35%, transparent);
   color: var(--text);
 }
+
+/* Content-swap fade: applied when the preview pane's project/mode changes.
+   GPU-only (opacity + transform), ease-out, well under 300ms. */
+@keyframes content-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-content-fade {
+  animation: content-fade-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-content-fade {
+    animation: none;
+  }
+}

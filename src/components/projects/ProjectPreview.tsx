@@ -78,7 +78,10 @@ export function ProjectPreview({
 
       <div className="min-h-0 flex-1">
         {mode === "description" && project ? (
-          <div className="h-full overflow-y-auto px-5 py-6">
+          <div
+            key={`desc-${project.id}`}
+            className="animate-content-fade h-full overflow-y-auto px-5 py-6"
+          >
             <h3 className="font-display text-2xl tracking-tight">
               {project.title}
             </h3>
@@ -87,7 +90,12 @@ export function ProjectPreview({
             </p>
           </div>
         ) : showModel ? (
-          <LazyModelViewer url={modelUrl} />
+          <div
+            key={`model-${project?.id ?? "default"}`}
+            className="animate-content-fade h-full"
+          >
+            <LazyModelViewer url={modelUrl} />
+          </div>
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-[var(--muted)]">
             3D preview idle
