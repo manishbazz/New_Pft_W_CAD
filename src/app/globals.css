@@ -99,3 +99,18 @@ body {
 .animate-particles-fade-in {
   animation: particles-fade-in 2600ms ease-out both;
 }
+
+/* Slow breathing pulse inviting the click on the entry gate. */
+@keyframes gate-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-gate-pulse {
+  animation: gate-pulse 2.2s ease-in-out infinite;
+}
