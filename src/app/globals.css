@@ -54,3 +54,18 @@ body {
 .animate-content-fade {
   animation: content-fade-in 420ms ease-out;
 }
+
+/* Breathing glow ring for the timeline dot marking the current role. */
+@keyframes dot-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in oklab, var(--accent) 0%, transparent);
+  }
+}
+
+.dot-glow {
+  animation: dot-glow 1.8s ease-in-out infinite;
+}
