@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { SiteContent } from "@/lib/types";
+import { ScrambleText } from "@/components/ScrambleText";
 import { HomeParticles } from "@/components/panels/HomeParticles";
 import { playIntroChime } from "@/lib/uiSound";
 
@@ -28,12 +29,16 @@ export function HomePanel({ site }: HomePanelProps) {
         <p className="mb-4 text-xs tracking-[0.35em] text-[var(--muted)] uppercase">
           Portfolio
         </p>
-        <h1
+        <div
           ref={nameRef}
           className="font-display text-5xl leading-none tracking-tight text-[var(--text)] sm:text-7xl md:text-8xl"
         >
-          {site.name}
-        </h1>
+          <ScrambleText
+            text={site.name}
+            duration={700}
+            delay={200}
+          />
+        </div>
         <div
           className="animate-intro-underline-slow mx-auto mt-4 h-px w-24 bg-[var(--accent)]"
           aria-hidden

@@ -1,0 +1,28 @@
+From fe16e7c534185da2f2c6544bbb1f290f85205dff Mon Sep 17 00:00:00 2001
+From: manishbazz <manishbazz@users.noreply.github.com>
+Date: Fri, 14 Aug 2026 22:54:48 +0000
+Subject: [PATCH] Drop --frozen-lockfile from CI install step
+
+Lets bun update bun.lock itself when package.json changes, so
+dependency additions don't require having bun installed locally
+just to regenerate the lockfile.
+---
+ .github/workflows/deploy.yml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/.github/workflows/deploy.yml b/.github/workflows/deploy.yml
+index c3488f6..7bdb506 100644
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -32,7 +32,7 @@ jobs:
+         uses: actions/configure-pages@v5
+ 
+       - name: Install dependencies
+-        run: bun install --frozen-lockfile
++        run: bun install
+ 
+       - name: Build
+         run: bun run build
+-- 
+2.43.0
+

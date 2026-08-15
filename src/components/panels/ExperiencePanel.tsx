@@ -1,3 +1,4 @@
+import { ScrambleText } from "@/components/ScrambleText";
 import type { ExperienceEntry } from "@/lib/types";
 
 type ExperiencePanelProps = {
@@ -15,9 +16,12 @@ export function ExperiencePanel({ experience }: ExperiencePanelProps) {
       className="h-full overflow-y-auto overscroll-contain px-6 pt-24 pb-16"
     >
       <div className="mx-auto max-w-3xl">
-        <h2 className="font-display text-3xl tracking-tight sm:text-4xl">
-          Experience
-        </h2>
+        <ScrambleText
+          text="Experience"
+          as="h2"
+          className="font-display text-3xl tracking-tight sm:text-4xl"
+          duration={500}
+        />
         <p className="mt-2 text-[var(--muted)]">A short timeline of roles.</p>
 
         <ol className="relative mt-12 border-l border-[var(--border)] pl-8">

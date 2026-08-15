@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ScrambleText } from "@/components/ScrambleText";
 import { ProjectList } from "@/components/projects/ProjectList";
 import {
   ProjectPreview,
@@ -47,9 +48,12 @@ export function ProjectsPanel({
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-10 lg:max-w-md lg:border-r lg:border-[var(--border)] xl:max-w-lg"
       >
         <div className="mb-6">
-          <h2 className="font-display text-3xl tracking-tight sm:text-4xl">
-            Projects
-          </h2>
+          <ScrambleText
+            text="Projects"
+            as="h2"
+            className="font-display text-3xl tracking-tight sm:text-4xl"
+            duration={500}
+          />
           <p className="mt-2 text-[var(--muted)]">
             Select a project to preview details
             <span className="hidden lg:inline"> on the right</span>.

@@ -58,3 +58,13 @@ export function playIntroChime() {
     }, 480);
   });
 }
+
+/** Glitchy text scramble sound: crunchy, electronic effect with high randomness. */
+export function playScrambleSound() {
+  loadZzfx()?.then(({ zzfx }) => {
+    // Fast, glitchy ascending crunch with heavy randomness
+    // volume, randomness, frequency, attack, sustain, release, shape(sawtooth),
+    // shapeCurve, slide, pitchSlide, vibratoDepth, vibratoFreq, noise, sustainVolume, decay
+    zzfx(0.35, 0.8, 1200, 0.01, 0.08, 0.12, 2, 1.5, -60, 0.3, 0, 0, 0.6, 0.05, 0.04);
+  });
+}

@@ -1,0 +1,466 @@
+From 55d3ad2285c863b1de46966ef4891aae26168186 Mon Sep 17 00:00:00 2001
+From: manishbazz <manishbazz@users.noreply.github.com>
+Date: Fri, 14 Aug 2026 22:37:12 +0000
+Subject: [PATCH] Particles bound to name text, Tekken-style punchy sounds,
+ slow punch-in intro with sound
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- HomeParticles now accepts boundsRef and hugs that element's rect
+  (inflated by a margin) instead of floating across the whole screen;
+  particles drift upward and respawn at the bottom within that band
+- Sounds redesigned with a percussive arcade-fighting-game feel:
+  hover is a dry filtered-noise tick + short square blip, click is a
+  bright noise snap layered with a descending sawtooth stab and a sub
+  thump for weight
+- Brought back the scale/blur punch-in reveal for the home intro, now
+  ~2x slower (1.5s) with a gentler flash and a later underline sweep,
+  paired with a slowed bass-swell + shimmer intro chime — this will
+  actually be audible now since the entry gate unlocks audio first
+---
+ src/app/globals.css                     |  57 +++++++++--
+ src/components/panels/HomePanel.tsx     |  27 ++++-
+ src/components/panels/HomeParticles.tsx |  77 ++++++++++----
+ src/lib/uiSound.ts                      | 129 +++++++++++++++---------
+ 4 files changed, 214 insertions(+), 76 deletions(-)
+
+diff --git a/src/app/globals.css b/src/app/globals.css
+index a93224d..6042545 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -70,20 +70,61 @@ body {
+   animation: dot-glow 1.8s ease-in-out infinite;
+ }
+ 
+-/* Home page intro: slow, gentle content rise + fade. */
+-@keyframes home-fade-in {
+-  from {
++/* Home page intro: bold-but-slow scale-in, like the earlier punch, ~2x slower. */
++@keyframes intro-punch-slow {
++  0% {
+     opacity: 0;
+-    transform: translateY(16px);
++    transform: scale(1.28);
++    filter: blur(5px);
+   }
+-  to {
++  65% {
+     opacity: 1;
+-    transform: translateY(0);
++    transform: scale(0.985);
++    filter: blur(0);
++  }
++  85% {
++    transform: scale(1.01);
++  }
++  100% {
++    transform: scale(1);
++  }
++}
++
++.animate-intro-punch-slow {
++  animation: intro-punch-slow 1500ms cubic-bezier(0.19, 1, 0.22, 1) both;
++}
++
++/* Soft, slow flash on landing — gentler than the original. */
++@keyframes intro-flash-slow {
++  0% {
++    opacity: 0;
++  }
++  55% {
++    opacity: 0.16;
++  }
++  100% {
++    opacity: 0;
++  }
++}
++
++.animate-intro-flash-slow {
++  animation: intro-flash-slow 1500ms ease-out forwards;
++}
++
++/* Accent underline sweeping in once the name settles. */
++@keyframes intro-underline-slow {
++  from {
++    transform: scaleX(0);
++  }
++  to {
++    transform: scaleX(1);
+   }
+ }
+ 
+-.animate-home-fade-slow {
+-  animation: home-fade-in 1800ms cubic-bezier(0.16, 1, 0.3, 1) both;
++.animate-intro-underline-slow {
++  transform-origin: center;
++  animation: intro-underline-slow 700ms cubic-bezier(0.65, 0, 0.35, 1) 950ms
++    both;
+ }
+ 
+ /* Ambient particle field slowly emerges rather than popping in. */
+diff --git a/src/components/panels/HomePanel.tsx b/src/components/panels/HomePanel.tsx
+index 3e65a05..5b83b36 100644
+--- a/src/components/panels/HomePanel.tsx
++++ b/src/components/panels/HomePanel.tsx
+@@ -1,22 +1,43 @@
++"use client";
++
++import { useEffect, useRef } from "react";
+ import type { SiteContent } from "@/lib/types";
+ import { HomeParticles } from "@/components/panels/HomeParticles";
++import { playIntroChime } from "@/lib/uiSound";
+ 
+ type HomePanelProps = {
+   site: SiteContent;
+ };
+ 
+ export function HomePanel({ site }: HomePanelProps) {
++  const nameRef = useRef<HTMLHeadingElement>(null);
++
++  useEffect(() => {
++    playIntroChime();
++  }, []);
++
+   return (
+     <div className="relative flex h-full w-full items-center justify-center px-6 pt-20">
+       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(90,120,140,0.12),transparent_55%),radial-gradient(ellipse_at_80%_80%,rgba(40,50,60,0.35),transparent_50%)]" />
+-      <HomeParticles />
+-      <div className="animate-home-fade-slow relative max-w-3xl text-center">
++      <HomeParticles boundsRef={nameRef} />
++      <div
++        className="pointer-events-none absolute inset-0 animate-intro-flash-slow bg-[var(--text)]"
++        aria-hidden
++      />
++      <div className="animate-intro-punch-slow relative max-w-3xl text-center">
+         <p className="mb-4 text-xs tracking-[0.35em] text-[var(--muted)] uppercase">
+           Portfolio
+         </p>
+-        <h1 className="font-display text-5xl leading-none tracking-tight text-[var(--text)] sm:text-7xl md:text-8xl">
++        <h1
++          ref={nameRef}
++          className="font-display text-5xl leading-none tracking-tight text-[var(--text)] sm:text-7xl md:text-8xl"
++        >
+           {site.name}
+         </h1>
++        <div
++          className="animate-intro-underline-slow mx-auto mt-4 h-px w-24 bg-[var(--accent)]"
++          aria-hidden
++        />
+         <p className="mt-6 text-lg text-[var(--muted)] sm:text-xl">
+           {site.designation}
+         </p>
+diff --git a/src/components/panels/HomeParticles.tsx b/src/components/panels/HomeParticles.tsx
+index 5ac2020..9f093ff 100644
+--- a/src/components/panels/HomeParticles.tsx
++++ b/src/components/panels/HomeParticles.tsx
+@@ -1,9 +1,9 @@
+ "use client";
+ 
+-import { useEffect, useRef } from "react";
++import { useEffect, useRef, type RefObject } from "react";
+ 
+ type Particle = {
+-  x: number; // normalized 0..1
++  x: number; // px, relative to canvas
+   y: number;
+   vx: number;
+   vy: number;
+@@ -12,22 +12,30 @@ type Particle = {
+   phase: number;
+ };
+ 
+-const PARTICLE_COUNT = 46;
++const PARTICLE_COUNT = 60;
+ const PARTICLE_RGB = "143, 163, 176"; // matches --accent
++const MARGIN = 46; // how far particles can drift past the text's edges
+ 
+-function createParticles(): Particle[] {
+-  return Array.from({ length: PARTICLE_COUNT }, () => ({
+-    x: Math.random(),
+-    y: Math.random(),
+-    vx: (Math.random() - 0.5) * 0.0035,
+-    vy: -0.002 - Math.random() * 0.003, // gentle upward drift
++type Bounds = { x: number; y: number; width: number; height: number };
++
++type HomeParticlesProps = {
++  /** Element the particle field should hug (e.g. the name/heading). */
++  boundsRef?: RefObject<HTMLElement | null>;
++};
++
++function spawnParticle(bounds: Bounds): Particle {
++  return {
++    x: bounds.x + Math.random() * bounds.width,
++    y: bounds.y + Math.random() * bounds.height,
++    vx: (Math.random() - 0.5) * 0.045,
++    vy: -0.02 - Math.random() * 0.035,
+     size: 0.6 + Math.random() * 1.8,
+-    baseAlpha: 0.15 + Math.random() * 0.35,
++    baseAlpha: 0.18 + Math.random() * 0.4,
+     phase: Math.random() * Math.PI * 2,
+-  }));
++  };
+ }
+ 
+-export function HomeParticles() {
++export function HomeParticles({ boundsRef }: HomeParticlesProps) {
+   const canvasRef = useRef<HTMLCanvasElement>(null);
+ 
+   useEffect(() => {
+@@ -39,6 +47,23 @@ export function HomeParticles() {
+     let width = 0;
+     let height = 0;
+     let dpr = 1;
++    let bounds: Bounds = { x: 0, y: 0, width: 0, height: 0 };
++
++    const measureBounds = () => {
++      const target = boundsRef?.current;
++      const canvasRect = canvas.getBoundingClientRect();
++      if (target) {
++        const r = target.getBoundingClientRect();
++        bounds = {
++          x: r.left - canvasRect.left - MARGIN,
++          y: r.top - canvasRect.top - MARGIN,
++          width: r.width + MARGIN * 2,
++          height: r.height + MARGIN * 2,
++        };
++      } else {
++        bounds = { x: 0, y: 0, width, height };
++      }
++    };
+ 
+     const resize = () => {
+       dpr = Math.min(window.devicePixelRatio || 1, 2);
+@@ -47,11 +72,18 @@ export function HomeParticles() {
+       canvas.width = width * dpr;
+       canvas.height = height * dpr;
+       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
++      measureBounds();
+     };
+     resize();
+     window.addEventListener("resize", resize);
++    // Re-measure shortly after mount too — web fonts loading can shift the
++    // text's layout size after the very first measurement.
++    const refit = window.setTimeout(measureBounds, 250);
++
++    let particles = Array.from({ length: PARTICLE_COUNT }, () =>
++      spawnParticle(bounds),
++    );
+ 
+-    const particles = createParticles();
+     let rafId = 0;
+     let start = performance.now();
+ 
+@@ -62,18 +94,22 @@ export function HomeParticles() {
+       for (const p of particles) {
+         p.x += p.vx;
+         p.y += p.vy;
+-        // wrap around edges
+-        if (p.x < -0.05) p.x = 1.05;
+-        if (p.x > 1.05) p.x = -0.05;
+-        if (p.y < -0.05) p.y = 1.05;
+-        if (p.y > 1.05) p.y = -0.05;
++
++        const left = bounds.x;
++        const right = bounds.x + bounds.width;
++        const top = bounds.y;
++        const bottom = bounds.y + bounds.height;
++
++        if (p.x < left || p.x > right || p.y < top - 10) {
++          Object.assign(p, spawnParticle(bounds), { y: bottom });
++        }
+ 
+         const pulse = 0.75 + 0.25 * Math.sin(elapsed / 1400 + p.phase);
+         const alpha = p.baseAlpha * pulse;
+ 
+         ctx.beginPath();
+         ctx.fillStyle = `rgba(${PARTICLE_RGB}, ${alpha})`;
+-        ctx.arc(p.x * width, p.y * height, p.size, 0, Math.PI * 2);
++        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+         ctx.fill();
+       }
+ 
+@@ -83,9 +119,10 @@ export function HomeParticles() {
+ 
+     return () => {
+       cancelAnimationFrame(rafId);
++      window.clearTimeout(refit);
+       window.removeEventListener("resize", resize);
+     };
+-  }, []);
++  }, [boundsRef]);
+ 
+   return (
+     <canvas
+diff --git a/src/lib/uiSound.ts b/src/lib/uiSound.ts
+index b6825f7..70b37eb 100644
+--- a/src/lib/uiSound.ts
++++ b/src/lib/uiSound.ts
+@@ -5,6 +5,7 @@
+ // since browsers block audio until the page has been interacted with.
+ 
+ let ctx: AudioContext | null = null;
++let noiseBuffer: AudioBuffer | null = null;
+ 
+ function getContext(): AudioContext | null {
+   if (typeof window === "undefined") return null;
+@@ -25,73 +26,111 @@ export function unlockAudio() {
+   getContext();
+ }
+ 
++function getNoiseBuffer(audio: AudioContext): AudioBuffer {
++  if (noiseBuffer) return noiseBuffer;
++  const length = Math.floor(audio.sampleRate * 0.08);
++  const buffer = audio.createBuffer(1, length, audio.sampleRate);
++  const data = buffer.getChannelData(0);
++  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
++  noiseBuffer = buffer;
++  return buffer;
++}
++
++function noiseBurst(
++  audio: AudioContext,
++  startAt: number,
++  durationMs: number,
++  peakGain: number,
++  filterFreq: number,
++  filterType: BiquadFilterType = "bandpass",
++) {
++  const noise = audio.createBufferSource();
++  noise.buffer = getNoiseBuffer(audio);
++  const filter = audio.createBiquadFilter();
++  filter.type = filterType;
++  filter.frequency.value = filterFreq;
++  filter.Q.value = 0.8;
++  const gain = audio.createGain();
++  const duration = durationMs / 1000;
++  gain.gain.setValueAtTime(peakGain, startAt);
++  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
++  noise.connect(filter).connect(gain).connect(audio.destination);
++  noise.start(startAt);
++  noise.stop(startAt + duration + 0.02);
++}
++
+ function tone(
+-  frequency: number,
++  audio: AudioContext,
++  startAt: number,
++  freqFrom: number,
++  freqTo: number,
+   durationMs: number,
+   peakGain: number,
+   type: OscillatorType,
+-  startAt = 0,
+ ) {
+-  const audio = getContext();
+-  if (!audio) return;
+-
+   const osc = audio.createOscillator();
+   const gain = audio.createGain();
+   osc.type = type;
+-  osc.frequency.value = frequency;
+-
+-  const now = audio.currentTime + startAt;
+   const duration = durationMs / 1000;
+-
+-  gain.gain.setValueAtTime(0, now);
+-  gain.gain.linearRampToValueAtTime(peakGain, now + 0.004);
+-  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+-
++  osc.frequency.setValueAtTime(freqFrom, startAt);
++  osc.frequency.exponentialRampToValueAtTime(
++    Math.max(freqTo, 1),
++    startAt + duration,
++  );
++  gain.gain.setValueAtTime(0, startAt);
++  gain.gain.linearRampToValueAtTime(peakGain, startAt + 0.004);
++  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+   osc.connect(gain).connect(audio.destination);
+-  osc.start(now);
+-  osc.stop(now + duration + 0.02);
++  osc.start(startAt);
++  osc.stop(startAt + duration + 0.02);
+ }
+ 
+-/** Crisp chiptune cursor blip — square wave, short and punchy. */
++/** Dry, percussive cursor tick — arcade-fighting-game menu feel. */
+ export function playHoverTick() {
+-  tone(1046, 30, 0.025, "square"); // C6
++  const audio = getContext();
++  if (!audio) return;
++  const now = audio.currentTime;
++  noiseBurst(audio, now, 18, 0.05, 3200, "highpass");
++  tone(audio, now, 1400, 1100, 22, 0.03, "square");
+ }
+ 
+-/** Two-note ascending "confirm" chime, classic JRPG menu-select feel. */
++/** Punchy select "stab": bright noise snap + a descending synth hit. */
+ export function playClickTick() {
+-  tone(784, 55, 0.05, "square"); // G5
+-  tone(1175, 90, 0.05, "square", 0.045); // D6, slightly overlapping
++  const audio = getContext();
++  if (!audio) return;
++  const now = audio.currentTime;
++  noiseBurst(audio, now, 30, 0.07, 2400, "bandpass");
++  tone(audio, now, 620, 190, 100, 0.08, "sawtooth");
++  tone(audio, now, 140, 90, 90, 0.05, "sine"); // sub weight
+ }
+ 
+-/** Bold logo-impact sting for the home page intro: a bass thump under a rising sweep. */
++/** Slow logo-landing sting: a soft bass swell rising into a gentle shimmer. */
+ export function playIntroChime() {
+   const audio = getContext();
+   if (!audio) return;
+   const now = audio.currentTime;
+ 
+-  // Low thump — the "hit".
+-  const thump = audio.createOscillator();
+-  const thumpGain = audio.createGain();
+-  thump.type = "sine";
+-  thump.frequency.setValueAtTime(150, now);
+-  thump.frequency.exponentialRampToValueAtTime(45, now + 0.22);
+-  thumpGain.gain.setValueAtTime(0, now);
+-  thumpGain.gain.linearRampToValueAtTime(0.22, now + 0.01);
+-  thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+-  thump.connect(thumpGain).connect(audio.destination);
+-  thump.start(now);
+-  thump.stop(now + 0.35);
++  const swell = audio.createOscillator();
++  const swellGain = audio.createGain();
++  swell.type = "sine";
++  swell.frequency.setValueAtTime(70, now);
++  swell.frequency.exponentialRampToValueAtTime(52, now + 0.9);
++  swellGain.gain.setValueAtTime(0, now);
++  swellGain.gain.linearRampToValueAtTime(0.14, now + 0.5);
++  swellGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.15);
++  swell.connect(swellGain).connect(audio.destination);
++  swell.start(now);
++  swell.stop(now + 1.2);
+ 
+-  // Rising sweep — the "shimmer" landing just after the hit.
+-  const sweep = audio.createOscillator();
+-  const sweepGain = audio.createGain();
+-  sweep.type = "sawtooth";
+-  sweep.frequency.setValueAtTime(320, now + 0.03);
+-  sweep.frequency.exponentialRampToValueAtTime(1100, now + 0.28);
+-  sweepGain.gain.setValueAtTime(0, now + 0.03);
+-  sweepGain.gain.linearRampToValueAtTime(0.05, now + 0.06);
+-  sweepGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36);
+-  sweep.connect(sweepGain).connect(audio.destination);
+-  sweep.start(now + 0.03);
+-  sweep.stop(now + 0.4);
++  const shimmer = audio.createOscillator();
++  const shimmerGain = audio.createGain();
++  shimmer.type = "triangle";
++  shimmer.frequency.setValueAtTime(260, now + 0.5);
++  shimmer.frequency.exponentialRampToValueAtTime(720, now + 1.15);
++  shimmerGain.gain.setValueAtTime(0, now + 0.5);
++  shimmerGain.gain.linearRampToValueAtTime(0.045, now + 0.75);
++  shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.35);
++  shimmer.connect(shimmerGain).connect(audio.destination);
++  shimmer.start(now + 0.5);
++  shimmer.stop(now + 1.4);
+ }
+-- 
+2.43.0
+
