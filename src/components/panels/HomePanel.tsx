@@ -26,7 +26,7 @@ export function HomePanel({ site, active = true }: HomePanelProps) {
             as="h1"
             text={site.name}
             play={active}
-            className="font-display text-5xl leading-none tracking-tight text-[var(--text)] sm:text-7xl md:text-8xl"
+            className="font-display text-3xl leading-relaxed tracking-wide text-[var(--text)] sm:text-4xl md:text-5xl"
           />
         </div>
         <p className="mt-6 text-lg text-[var(--muted)] sm:text-xl">

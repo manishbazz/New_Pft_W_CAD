@@ -30,7 +30,7 @@ export function Nav({ active, onNavigate }: NavProps) {
                   type="button"
                   onClick={() => onNavigate(id)}
                   className={[
-                    "inline-block px-3 py-1.5 text-sm tracking-wide transition-colors",
+                    "font-display inline-block px-3 py-1.5 text-sm tracking-wide transition-colors",
                     isActive
                       ? "text-[var(--text)]"
                       : "text-[var(--muted)] hover:text-[var(--text)]",
