@@ -1,12 +1,17 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { ScrambleText } from "@/components/ScrambleText";
 
 type ContactPanelProps = {
   contactEmail: string;
+  active?: boolean;
 };
 
-export function ContactPanel({ contactEmail }: ContactPanelProps) {
+export function ContactPanel({
+  contactEmail,
+  active = true,
+}: ContactPanelProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
@@ -26,9 +31,12 @@ export function ContactPanel({ contactEmail }: ContactPanelProps) {
       className="h-full overflow-y-auto overscroll-contain px-6 pt-24 pb-16"
     >
       <div className="mx-auto max-w-lg">
-        <h2 className="font-display text-3xl tracking-tight sm:text-4xl">
-          Contact
-        </h2>
+        <ScrambleText
+          as="h2"
+          text="Contact"
+          play={active}
+          className="font-display text-3xl tracking-tight sm:text-4xl"
+        />
         <p className="mt-2 text-[var(--muted)]">
           Sends via your mail client to {contactEmail}.
         </p>

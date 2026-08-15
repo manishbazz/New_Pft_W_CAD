@@ -1,23 +1,33 @@
+"use client";
+
 import type { ExperienceEntry } from "@/lib/types";
+import { ScrambleText } from "@/components/ScrambleText";
 
 type ExperiencePanelProps = {
   experience: ExperienceEntry[];
+  active?: boolean;
 };
 
 // The one entry that represents where Manish currently works (not just any
 // "Present" entry — the ongoing degree also says Present and shouldn't glow).
 const CURRENT_COMPANY_ID = "menthosa-solutions";
 
-export function ExperiencePanel({ experience }: ExperiencePanelProps) {
+export function ExperiencePanel({
+  experience,
+  active = true,
+}: ExperiencePanelProps) {
   return (
     <div
       data-panel-scroll="true"
       className="h-full overflow-y-auto overscroll-contain px-6 pt-24 pb-16"
     >
       <div className="mx-auto max-w-3xl">
-        <h2 className="font-display text-3xl tracking-tight sm:text-4xl">
-          Experience
-        </h2>
+        <ScrambleText
+          as="h2"
+          text="Experience"
+          play={active}
+          className="font-display text-3xl tracking-tight sm:text-4xl"
+        />
         <p className="mt-2 text-[var(--muted)]">A short timeline of roles.</p>
 
         <ol className="relative mt-12 border-l border-[var(--border)] pl-8">

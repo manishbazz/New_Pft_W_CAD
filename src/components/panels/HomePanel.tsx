@@ -3,13 +3,15 @@
 import { useRef } from "react";
 import type { SiteContent } from "@/lib/types";
 import { HomeParticles } from "@/components/panels/HomeParticles";
+import { ScrambleText } from "@/components/ScrambleText";
 
 type HomePanelProps = {
   site: SiteContent;
+  active?: boolean;
 };
 
-export function HomePanel({ site }: HomePanelProps) {
-  const nameRef = useRef<HTMLHeadingElement>(null);
+export function HomePanel({ site, active = true }: HomePanelProps) {
+  const nameRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="relative flex h-full w-full items-center justify-center px-6 pt-20">
@@ -19,12 +21,14 @@ export function HomePanel({ site }: HomePanelProps) {
         <p className="mb-4 text-xs tracking-[0.35em] text-[var(--muted)] uppercase">
           Portfolio
         </p>
-        <h1
-          ref={nameRef}
-          className="font-display text-5xl leading-none tracking-tight text-[var(--text)] sm:text-7xl md:text-8xl"
-        >
-          {site.name}
-        </h1>
+        <div ref={nameRef} className="inline-block">
+          <ScrambleText
+            as="h1"
+            text={site.name}
+            play={active}
+            className="font-display text-5xl leading-none tracking-tight text-[var(--text)] sm:text-7xl md:text-8xl"
+          />
+        </div>
         <p className="mt-6 text-lg text-[var(--muted)] sm:text-xl">
           {site.designation}
         </p>

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Instrument_Sans, Syne } from "next/font/google";
+import { Instrument_Sans, Silkscreen } from "next/font/google";
 import "./globals.css";
 
-const syne = Syne({
+const pixelDisplay = Silkscreen({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["400", "700"],
 });
 
 const instrument = Instrument_Sans({
@@ -22,7 +22,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${syne.variable} ${instrument.variable} h-full antialiased`}
+      className={`${pixelDisplay.variable} ${instrument.variable} h-full antialiased`}
     >
       <body className="min-h-full overflow-hidden bg-[var(--bg)] text-[var(--text)]">
         {children}

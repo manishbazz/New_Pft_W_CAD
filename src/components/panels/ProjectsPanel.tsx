@@ -6,6 +6,7 @@ import {
   ProjectPreview,
   type PreviewMode,
 } from "@/components/projects/ProjectPreview";
+import { ScrambleText } from "@/components/ScrambleText";
 import type { ProjectEntry } from "@/lib/types";
 
 type ProjectsPanelProps = {
@@ -47,9 +48,12 @@ export function ProjectsPanel({
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-10 lg:max-w-md lg:border-r lg:border-[var(--border)] xl:max-w-lg"
       >
         <div className="mb-6">
-          <h2 className="font-display text-3xl tracking-tight sm:text-4xl">
-            Projects
-          </h2>
+          <ScrambleText
+            as="h2"
+            text="Projects"
+            play={active}
+            className="font-display text-3xl tracking-tight sm:text-4xl"
+          />
           <p className="mt-2 text-[var(--muted)]">
             Select a project to preview details
             <span className="hidden lg:inline"> on the right</span>.

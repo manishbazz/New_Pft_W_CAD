@@ -252,7 +252,7 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
             className="h-full shrink-0 overflow-hidden"
             style={{ width: `${panelWidthPercent}%` }}
           >
-            <HomePanel site={content.site} />
+            <HomePanel site={content.site} active={active === "home"} />
           </section>
 
           <section
@@ -282,7 +282,10 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
             className="h-full shrink-0 overflow-hidden"
             style={{ width: `${panelWidthPercent}%` }}
           >
-            <ExperiencePanel experience={content.experience} />
+            <ExperiencePanel
+              experience={content.experience}
+              active={active === "experience"}
+            />
           </section>
 
           <section
@@ -292,7 +295,10 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
             className="h-full shrink-0 overflow-hidden"
             style={{ width: `${panelWidthPercent}%` }}
           >
-            <ContactPanel contactEmail={content.site.contactEmail} />
+            <ContactPanel
+              contactEmail={content.site.contactEmail}
+              active={active === "contact"}
+            />
           </section>
         </div>
       </div>

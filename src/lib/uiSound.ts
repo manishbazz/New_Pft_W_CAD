@@ -58,3 +58,11 @@ export function playIntroChime() {
     }, 480);
   });
 }
+
+/** Very short, quiet blip for text unscrambling — fires per-character, must stay light. */
+export function playScrambleTick() {
+  loadZzfx()?.then(({ zzfx }) => {
+    const freq = 900 + Math.random() * 500;
+    zzfx(0.06, 0, freq, 0, 0.004, 0.012, 1, 1, 0, 0, 0, 0, 0, 0);
+  });
+}
