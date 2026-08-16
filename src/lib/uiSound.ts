@@ -43,7 +43,7 @@ export function playClickTick() {
   loadZzfx()?.then(({ zzfx }) => {
     // volume, randomness, freq, attack, sustain, release, shape(saw),
     // shapeCurve, slide(descending), ..., noise, ..., sustainVolume, decay
-    zzfx(0.4, 0.05, 340, 0, 0.02, 0.13, 2, 1.1, -28, 0, 0, 0, 0, 0.08, 0, 0, 0, 0.8, 0.05);
+    zzfx(0.22, 0.05, 340, 0, 0.02, 0.13, 2, 1.1, -28, 0, 0, 0, 0, 0.08, 0, 0, 0, 0.8, 0.05);
   });
 }
 
@@ -63,6 +63,6 @@ export function playIntroChime() {
 export function playScrambleTick() {
   loadZzfx()?.then(({ zzfx }) => {
     const freq = 900 + Math.random() * 500;
-    zzfx(0.06, 0, freq, 0, 0.004, 0.012, 1, 1, 0, 0, 0, 0, 0, 0);
+    zzfx(0.14, 0, freq, 0, 0.004, 0.012, 1, 1, 0, 0, 0, 0, 0, 0);
   });
 }
