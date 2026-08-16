@@ -8,6 +8,7 @@ import {
   type ComponentType,
 } from "react";
 import { Nav } from "@/components/Nav";
+import { AboutPanel } from "@/components/panels/AboutPanel";
 import { ContactPanel } from "@/components/panels/ContactPanel";
 import { ExperiencePanel } from "@/components/panels/ExperiencePanel";
 import { HomePanel } from "@/components/panels/HomePanel";
@@ -298,6 +299,22 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
             <ContactPanel
               contactEmail={content.site.contactEmail}
               active={active === "contact"}
+            />
+          </section>
+
+          <section
+            data-panel="about"
+            aria-label="About"
+            aria-hidden={active !== "about"}
+            className="h-full shrink-0 overflow-hidden"
+            style={{ width: `${panelWidthPercent}%` }}
+          >
+            <AboutPanel
+              bio={content.site.bio ?? []}
+              location={content.site.location}
+              favoriteSong={content.site.favoriteSong}
+              spotifyStatusUrl={content.site.spotifyStatusUrl}
+              active={active === "about"}
             />
           </section>
         </div>

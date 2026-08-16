@@ -3,12 +3,25 @@ export type SocialLink = {
   href: string;
 };
 
+export type FavoriteSong = {
+  title: string;
+  artist: string;
+  url?: string;
+};
+
 export type SiteContent = {
   name: string;
   designation: string;
   contactEmail: string;
   defaultModel: string;
   links: SocialLink[];
+  location?: string;
+  bio?: string[];
+  favoriteSong?: FavoriteSong;
+  /** Optional public JSON endpoint returning live Spotify now-playing status.
+   * See NowPlaying.tsx for the expected response shape. Falls back to
+   * favoriteSong (above) when unset or unreachable. */
+  spotifyStatusUrl?: string;
 };
 
 export type ExperienceEntry = {
@@ -38,7 +51,13 @@ export type PortfolioContent = {
   projects: ProjectEntry[];
 };
 
-export const PANEL_IDS = ["home", "projects", "experience", "contact"] as const;
+export const PANEL_IDS = [
+  "home",
+  "projects",
+  "experience",
+  "contact",
+  "about",
+] as const;
 export type PanelId = (typeof PANEL_IDS)[number];
 
 export const PANEL_LABELS: Record<PanelId, string> = {
@@ -46,4 +65,5 @@ export const PANEL_LABELS: Record<PanelId, string> = {
   projects: "Projects",
   experience: "Experience",
   contact: "Contact",
+  about: "About",
 };

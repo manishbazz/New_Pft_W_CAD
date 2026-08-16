@@ -66,6 +66,10 @@ type SiteYaml = {
   contactEmail: string;
   defaultModel: string;
   links: SiteContent["links"];
+  location?: string;
+  bio?: string[];
+  favoriteSong?: SiteContent["favoriteSong"];
+  spotifyStatusUrl?: string;
 };
 
 type ExperienceYaml = {
@@ -98,6 +102,10 @@ export function loadPortfolioContent(): PortfolioContent {
       ? withBasePath(siteYaml.defaultModel)
       : "",
     links: siteYaml.links ?? [],
+    location: siteYaml.location,
+    bio: siteYaml.bio ?? [],
+    favoriteSong: siteYaml.favoriteSong,
+    spotifyStatusUrl: siteYaml.spotifyStatusUrl,
   };
 
   const experience: ExperienceEntry[] = (experienceYaml.experience ?? []).map(

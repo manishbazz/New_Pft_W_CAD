@@ -98,3 +98,32 @@ body {
 .animate-gate-pulse {
   animation: gate-pulse 2.2s ease-in-out infinite;
 }
+
+/* Slowly rotating decorative gears on the About page. */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spin-slow-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 40s linear infinite;
+  transform-origin: center;
+}
+
+.animate-spin-slow-reverse {
+  animation: spin-slow-reverse 55s linear infinite;
+  transform-origin: center;
+}

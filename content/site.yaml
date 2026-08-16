@@ -9,3 +9,30 @@ links:
     href: https://www.linkedin.com/in/manish-kumar-sharma-04941a253/
   - label: Email
     href: mailto:bmanishsharma1718@gmail.com
+
+location: Chandigarh, India
+
+bio:
+  - >-
+    I am a mechanical engineer who is trying to be great in the subject I
+    love — solving problems, either with CAD or code. I love things that
+    fly, and I'm really proud of my work. I do it because my forefathers
+    used to work with metal, so I decided to take it one step further —
+    always looking to make a difference :3
+  - >-
+    In my free time I hang out with my friends or play games — right now
+    I'm playing Elden Ring Nightreign. And my SolidWorks doesn't crash,
+    hehe.
+
+# Shown when spotifyStatusUrl below is unset/unreachable, or nothing is
+# currently playing. Edit this to whatever your actual favorite is.
+favoriteSong:
+  title: Song title
+  artist: Artist name
+  url: https://open.spotify.com/
+
+# Optional: public JSON endpoint for a LIVE now-playing widget. See the
+# comment at the top of src/components/NowPlaying.tsx for how to set this
+# up (it needs a small serverless proxy — GitHub Pages alone can't hold
+# Spotify API secrets securely). Leave blank to just show favoriteSong above.
+spotifyStatusUrl:
