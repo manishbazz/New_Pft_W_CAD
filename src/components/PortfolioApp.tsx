@@ -290,19 +290,6 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
           </section>
 
           <section
-            data-panel="contact"
-            aria-label="Contact"
-            aria-hidden={active !== "contact"}
-            className="h-full shrink-0 overflow-hidden"
-            style={{ width: `${panelWidthPercent}%` }}
-          >
-            <ContactPanel
-              contactEmail={content.site.contactEmail}
-              active={active === "contact"}
-            />
-          </section>
-
-          <section
             data-panel="about"
             aria-label="About"
             aria-hidden={active !== "about"}
@@ -315,6 +302,19 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
               favoriteSong={content.site.favoriteSong}
               spotifyStatusUrl={content.site.spotifyStatusUrl}
               active={active === "about"}
+            />
+          </section>
+
+          <section
+            data-panel="contact"
+            aria-label="Contact"
+            aria-hidden={active !== "contact"}
+            className="h-full shrink-0 overflow-hidden"
+            style={{ width: `${panelWidthPercent}%` }}
+          >
+            <ContactPanel
+              contactEmail={content.site.contactEmail}
+              active={active === "contact"}
             />
           </section>
         </div>

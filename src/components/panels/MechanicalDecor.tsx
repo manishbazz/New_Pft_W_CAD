@@ -48,7 +48,12 @@ function Gear({ size, teeth = 10, className, style }: GearProps) {
   );
 }
 
-/** Floating gears + faint CFD equations, purely decorative background texture. */
+/**
+ * Floating gears + CFD equations, purely decorative background texture.
+ * Gears stay pinned to two opposite corners (kept well apart from each
+ * other and clipped mostly off-canvas) so they never overlap; equations
+ * sit in the untouched vertical center band, clear of both corners.
+ */
 export function MechanicalDecor() {
   return (
     <div
@@ -56,32 +61,24 @@ export function MechanicalDecor() {
       aria-hidden
     >
       <Gear
-        size={180}
+        size={220}
         teeth={12}
-        className="animate-spin-slow absolute -top-10 -right-10 opacity-25"
+        className="animate-spin-slow absolute -top-16 -right-16 opacity-20"
       />
       <Gear
-        size={110}
-        teeth={8}
-        className="animate-spin-slow-reverse absolute top-24 -right-2 opacity-20"
-      />
-      <Gear
-        size={140}
+        size={170}
         teeth={10}
-        className="animate-spin-slow-reverse absolute -bottom-8 -left-10 opacity-20"
-      />
-      <Gear
-        size={70}
-        teeth={8}
-        className="animate-spin-slow absolute bottom-32 left-16 opacity-15"
+        className="animate-spin-slow-reverse absolute -bottom-14 -left-14 opacity-20"
       />
 
-      <p className="absolute top-1/3 left-1/2 hidden -translate-x-1/2 rotate-[-6deg] font-mono text-sm tracking-wide text-[var(--border)] opacity-30 sm:block">
-        ∂u/∂t + (u·∇)u = −∇p/ρ + ν∇²u
-      </p>
-      <p className="absolute bottom-20 left-1/2 hidden -translate-x-1/2 rotate-[4deg] font-mono text-xs tracking-wide text-[var(--border)] opacity-25 sm:block">
-        ∇·u = 0
-      </p>
+      <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-4 px-4">
+        <p className="rotate-[-3deg] text-center font-mono text-xl tracking-wide text-[var(--border)] opacity-45 sm:text-2xl">
+          ∂u/∂t + (u·∇)u = −∇p/ρ + ν∇²u
+        </p>
+        <p className="rotate-[2deg] text-center font-mono text-lg tracking-wide text-[var(--border)] opacity-40 sm:text-xl">
+          ∇·u = 0
+        </p>
+      </div>
     </div>
   );
 }

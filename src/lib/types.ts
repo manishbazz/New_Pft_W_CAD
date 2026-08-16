@@ -55,8 +55,8 @@ export const PANEL_IDS = [
   "home",
   "projects",
   "experience",
-  "contact",
   "about",
+  "contact",
 ] as const;
 export type PanelId = (typeof PANEL_IDS)[number];
 

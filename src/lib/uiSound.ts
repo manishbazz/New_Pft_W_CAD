@@ -34,7 +34,7 @@ export function unlockAudio() {
 export function playHoverTick() {
   loadZzfx()?.then(({ zzfx }) => {
     // volume, randomness, frequency, attack, sustain, release, shape(triangle)
-    zzfx(0.25, 0, 1300, 0, 0.006, 0.03, 1, 1.2, 0, 0, 0, 0, 0, 0.02);
+    zzfx(0.5, 0, 1300, 0, 0.006, 0.03, 1, 1.2, 0, 0, 0, 0, 0, 0.02);
   });
 }
 
@@ -43,7 +43,7 @@ export function playClickTick() {
   loadZzfx()?.then(({ zzfx }) => {
     // volume, randomness, freq, attack, sustain, release, shape(saw),
     // shapeCurve, slide(descending), ..., noise, ..., sustainVolume, decay
-    zzfx(0.22, 0.05, 340, 0, 0.02, 0.13, 2, 1.1, -28, 0, 0, 0, 0, 0.08, 0, 0, 0, 0.8, 0.05);
+    zzfx(0.44, 0.05, 340, 0, 0.02, 0.13, 2, 1.1, -28, 0, 0, 0, 0, 0.08, 0, 0, 0, 0.8, 0.05);
   });
 }
 
@@ -51,10 +51,10 @@ export function playClickTick() {
 export function playIntroChime() {
   loadZzfx()?.then(({ zzfx }) => {
     // Bass swell — low sine, long attack/sustain/release.
-    zzfx(0.55, 0, 62, 0.15, 0.5, 0.55, 0, 1, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0.9, 0.25);
+    zzfx(1.1, 0, 62, 0.15, 0.5, 0.55, 0, 1, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0.9, 0.25);
     // Shimmer, arriving a beat later.
     window.setTimeout(() => {
-      zzfx(0.28, 0, 260, 0.05, 0.3, 0.55, 1, 1, 55, 0, 0, 0, 0, 0, 0, 0, 0, 0.7, 0.1);
+      zzfx(0.56, 0, 260, 0.05, 0.3, 0.55, 1, 1, 55, 0, 0, 0, 0, 0, 0, 0, 0, 0.7, 0.1);
     }, 480);
   });
 }
@@ -63,6 +63,6 @@ export function playIntroChime() {
 export function playScrambleTick() {
   loadZzfx()?.then(({ zzfx }) => {
     const freq = 900 + Math.random() * 500;
-    zzfx(0.14, 0, freq, 0, 0.004, 0.012, 1, 1, 0, 0, 0, 0, 0, 0);
+    zzfx(0.28, 0, freq, 0, 0.004, 0.012, 1, 1, 0, 0, 0, 0, 0, 0);
   });
 }

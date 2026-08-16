@@ -1,9 +1,8 @@
 "use client";
 
-import { useRef } from "react";
 import type { SiteContent } from "@/lib/types";
-import { HomeParticles } from "@/components/panels/HomeParticles";
 import { ScrambleText } from "@/components/ScrambleText";
+import { MechanicalDecor } from "@/components/panels/MechanicalDecor";
 
 type HomePanelProps = {
   site: SiteContent;
@@ -11,24 +10,20 @@ type HomePanelProps = {
 };
 
 export function HomePanel({ site, active = true }: HomePanelProps) {
-  const nameRef = useRef<HTMLDivElement>(null);
-
   return (
     <div className="relative flex h-full w-full items-center justify-center px-6 pt-20">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(90,120,140,0.12),transparent_55%),radial-gradient(ellipse_at_80%_80%,rgba(40,50,60,0.35),transparent_50%)]" />
-      <HomeParticles boundsRef={nameRef} />
+      <MechanicalDecor />
       <div className="relative max-w-3xl text-center">
         <p className="mb-4 text-xs tracking-[0.35em] text-[var(--muted)] uppercase">
           Portfolio
         </p>
-        <div ref={nameRef} className="inline-block">
-          <ScrambleText
-            as="h1"
-            text={site.name}
-            play={active}
-            className="font-display text-3xl leading-relaxed tracking-wide text-[var(--text)] sm:text-4xl md:text-5xl"
-          />
-        </div>
+        <ScrambleText
+          as="h1"
+          text={site.name}
+          play={active}
+          className="font-display text-3xl leading-relaxed tracking-wide text-[var(--text)] sm:text-4xl md:text-5xl"
+        />
         <p className="mt-6 text-lg text-[var(--muted)] sm:text-xl">
           {site.designation}
         </p>
