@@ -3,40 +3,38 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Low-resolution 2D incompressible Navier–Stokes visualization.
+ * Low-resolution 2D incompressible flow visualization using the Stable
+ * Fluids method (Stam, 1999): direct velocity-field projection via
+ * Gauss-Seidel relaxation to enforce incompressibility, rather than a
+ * vorticity–streamfunction formulation. This is the same approach used by
+ * reference Eulerian solvers that reproduce correct vortex shedding
+ * (e.g. https://github.com/xzips/Euler-Fluid-Simulation):
  *
- * Formulation:
- *   ∂ω/∂t + u·∇ω = ν∇²ω
- *   ∇²ψ = -ω
- *   u =  ∂ψ/∂y
- *   v = -∂ψ/∂x
+ *   1. Apply boundary conditions (inlet, far-field, obstacle).
+ *   2. Project: solve for pressure via Gauss-Seidel so that ∇·u = 0,
+ *      then subtract ∇p from the velocity field.
+ *   3. Re-enforce obstacle boundary (no-slip solid).
+ *   4. Self-advect velocity (semi-Lagrangian).
+ *   5. Project again (advection reintroduces divergence).
+ *   6. Advect dye (passive scalar) through the divergence-free field.
  *
- * We deliberately solve on a coarse grid and render to a normal-resolution
- * canvas. This keeps the simulation inexpensive while retaining a real
- * viscous wake behind the mouse-controlled circular body.
- *
- * Visualization: a passive dye/density field is continuously injected as
- * thin streaklines at the inlet and advected + lightly diffused through the
- * same velocity field used by the vorticity solve. This reads as smoke and
- * reveals vortex shedding directly, since the alternating bands roll up
- * into the wake instead of staying straight.
+ * No explicit viscosity term is used — as in the Euler-equation reference
+ * above, the coarse grid's numerical dissipation is what produces shedding.
+ * The dye field has no decay: it's a bounded convex combination under
+ * semi-Lagrangian advection, so streaklines stay at full strength until
+ * they're actually carried out through the open right boundary.
  */
 
 const NX = 96;
 const NY = 48;
-const ITERATIONS = 18;
-const SOLVE_EVERY = 2;
+const PROJECT_ITERATIONS = 26;
 const U_INF = 1.0;
-const RE = 80;
-const VISCOSITY = 1 / RE;
-const TIME_SCALE = 16; // matches original grid-units-per-second scaling
+const TIME_SCALE = 20; // grid-units of advection per second
 
 // Smoke field tuning.
-const DYE_DIFFUSION = VISCOSITY * 0.6; // slightly sharper than momentum diffusion
-const DYE_DECAY = 0.995; // gentle fade so the field doesn't saturate
 const STRIPE_SPACING = 4; // grid rows per light/dark stripe pair
 const STRIPE_WIDTH = 2; // rows of "on" smoke within each pair
-const SMOKE_BLUR_PX = 1.25;
+const SMOKE_BLUR_PX = 1.1;
 
 export function FlowSimulation() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -51,19 +49,18 @@ export function FlowSimulation() {
     const canvas: HTMLCanvasElement = canvasElement;
     const ctx: CanvasRenderingContext2D = context;
 
-    const omega = new Float32Array(NX * NY);
-    const omegaNext = new Float32Array(NX * NY);
-    const psi = new Float32Array(NX * NY);
-    const psiNext = new Float32Array(NX * NY);
     const u = new Float32Array(NX * NY);
     const v = new Float32Array(NX * NY);
+    const u0 = new Float32Array(NX * NY);
+    const v0 = new Float32Array(NX * NY);
+    const p = new Float32Array(NX * NY);
+    const div = new Float32Array(NX * NY);
     const solid = new Uint8Array(NX * NY);
     const dye = new Float32Array(NX * NY);
-    const dyeNext = new Float32Array(NX * NY);
+    const dye0 = new Float32Array(NX * NY);
 
     // Offscreen low-res surface the dye field is written into, then
-    // upscaled with bilinear smoothing onto the visible canvas. This is
-    // what turns a coarse scalar field into something that reads as smoke.
+    // upscaled with bilinear smoothing onto the visible canvas.
     const fieldCanvas = document.createElement("canvas");
     fieldCanvas.width = NX;
     fieldCanvas.height = NY;
@@ -81,11 +78,31 @@ export function FlowSimulation() {
     let hovering = false;
     let raf = 0;
     let last = performance.now();
-    let frame = 0;
 
     const idx = (x: number, y: number) => y * NX + x;
     const clamp = (x: number, lo: number, hi: number) =>
       Math.max(lo, Math.min(hi, x));
+
+    function sampleField(field: Float32Array, x: number, y: number) {
+      const cx = clamp(x, 0, NX - 1.001);
+      const cy = clamp(y, 0, NY - 1.001);
+      const x0 = Math.floor(cx);
+      const y0 = Math.floor(cy);
+      const x1 = x0 + 1;
+      const y1 = y0 + 1;
+      const tx = cx - x0;
+      const ty = cy - y0;
+
+      const i00 = idx(x0, y0);
+      const i10 = idx(x1, y0);
+      const i01 = idx(x0, y1);
+      const i11 = idx(x1, y1);
+
+      return (
+        (field[i00] * (1 - tx) + field[i10] * tx) * (1 - ty) +
+        (field[i01] * (1 - tx) + field[i11] * tx) * ty
+      );
+    }
 
     function updateBodyMask() {
       bodyRadius = Math.max(5, Math.min(NX, NY) * 0.14);
@@ -113,57 +130,108 @@ export function FlowSimulation() {
       ctx.fillRect(0, 0, width, height);
     }
 
-    function setInletAndFarField() {
-      // Uniform left-to-right streamfunction:
-      // ψ = U*y on the outer boundary.
+    function applyInletBoundary() {
+      // Left inlet: fixed uniform inflow.
       for (let y = 0; y < NY; y++) {
-        const value = U_INF * y;
-        psi[idx(0, y)] = value;
-        psi[idx(NX - 1, y)] = value;
+        u[idx(0, y)] = U_INF;
+        v[idx(0, y)] = 0;
+        u[idx(1, y)] = U_INF;
       }
+      // Top/bottom far-field: uniform flow (free-slip).
       for (let x = 0; x < NX; x++) {
-        psi[idx(x, 0)] = 0;
-        psi[idx(x, NY - 1)] = U_INF * (NY - 1);
+        u[idx(x, 0)] = U_INF;
+        v[idx(x, 0)] = 0;
+        u[idx(x, NY - 1)] = U_INF;
+        v[idx(x, NY - 1)] = 0;
+      }
+      // Right outlet: open boundary (zero-gradient).
+      for (let y = 0; y < NY; y++) {
+        u[idx(NX - 1, y)] = u[idx(NX - 2, y)];
+        v[idx(NX - 1, y)] = v[idx(NX - 2, y)];
       }
     }
 
-    function solveStreamfunction() {
-      setInletAndFarField();
+    function enforceObstacle() {
+      for (let i = 0; i < NX * NY; i++) {
+        if (solid[i]) {
+          u[i] = 0;
+          v[i] = 0;
+        }
+      }
+    }
 
-      // Jacobi relaxation for ∇²ψ = -ω.
-      for (let k = 0; k < ITERATIONS; k++) {
+    function setScalarBoundary(field: Float32Array) {
+      for (let y = 0; y < NY; y++) {
+        field[idx(0, y)] = field[idx(1, y)];
+        field[idx(NX - 1, y)] = field[idx(NX - 2, y)];
+      }
+      for (let x = 0; x < NX; x++) {
+        field[idx(x, 0)] = field[idx(x, 1)];
+        field[idx(x, NY - 1)] = field[idx(x, NY - 2)];
+      }
+    }
+
+    // Neighbor pressure with Neumann (zero-flux) mirroring across solid
+    // cells, so the projection never pulls flow into the obstacle.
+    function neighborPressure(cx: number, cy: number, self: number) {
+      const i = idx(cx, cy);
+      return solid[i] ? self : p[i];
+    }
+
+    function project(iterations: number) {
+      for (let y = 1; y < NY - 1; y++) {
+        for (let x = 1; x < NX - 1; x++) {
+          const i = idx(x, y);
+          if (solid[i]) {
+            div[i] = 0;
+            p[i] = 0;
+            continue;
+          }
+          div[i] =
+            -0.5 *
+            (u[idx(x + 1, y)] -
+              u[idx(x - 1, y)] +
+              (v[idx(x, y + 1)] - v[idx(x, y - 1)]));
+          p[i] = 0;
+        }
+      }
+
+      for (let k = 0; k < iterations; k++) {
         for (let y = 1; y < NY - 1; y++) {
           for (let x = 1; x < NX - 1; x++) {
             const i = idx(x, y);
             if (solid[i]) {
-              psiNext[i] = U_INF * bodyY;
+              p[i] = 0;
               continue;
             }
-
-            psiNext[i] =
-              0.25 *
-              (psi[idx(x + 1, y)] +
-                psi[idx(x - 1, y)] +
-                psi[idx(x, y + 1)] +
-                psi[idx(x, y - 1)] +
-                omega[i]);
+            const pl = neighborPressure(x - 1, y, p[i]);
+            const pr = neighborPressure(x + 1, y, p[i]);
+            const pd = neighborPressure(x, y - 1, p[i]);
+            const puN = neighborPressure(x, y + 1, p[i]);
+            p[i] = (div[i] + pl + pr + pd + puN) * 0.25;
           }
         }
+        setScalarBoundary(p);
+      }
 
+      for (let y = 1; y < NY - 1; y++) {
         for (let x = 1; x < NX - 1; x++) {
-          psiNext[idx(x, 0)] = 0;
-          psiNext[idx(x, NY - 1)] = U_INF * (NY - 1);
+          const i = idx(x, y);
+          if (solid[i]) continue;
+          const pl = neighborPressure(x - 1, y, p[i]);
+          const pr = neighborPressure(x + 1, y, p[i]);
+          const pd = neighborPressure(x, y - 1, p[i]);
+          const puN = neighborPressure(x, y + 1, p[i]);
+          u[i] -= 0.5 * (pr - pl);
+          v[i] -= 0.5 * (puN - pd);
         }
-        for (let y = 0; y < NY; y++) {
-          psiNext[idx(0, y)] = U_INF * y;
-          psiNext[idx(NX - 1, y)] = U_INF * y;
-        }
-
-        psi.set(psiNext);
       }
     }
 
-    function updateVelocity() {
+    function advectVelocity(dt: number) {
+      u0.set(u);
+      v0.set(v);
+
       for (let y = 1; y < NY - 1; y++) {
         for (let x = 1; x < NX - 1; x++) {
           const i = idx(x, y);
@@ -172,121 +240,15 @@ export function FlowSimulation() {
             v[i] = 0;
             continue;
           }
-
-          u[i] = 0.5 * (psi[idx(x, y + 1)] - psi[idx(x, y - 1)]);
-          v[i] = -0.5 * (psi[idx(x + 1, y)] - psi[idx(x - 1, y)]);
+          const bx = x - u0[i] * dt;
+          const by = y - v0[i] * dt;
+          u[i] = sampleField(u0, bx, by);
+          v[i] = sampleField(v0, bx, by);
         }
       }
 
-      // Uniform inflow/outflow and far-field values.
-      for (let y = 0; y < NY; y++) {
-        u[idx(0, y)] = U_INF;
-        u[idx(NX - 1, y)] = U_INF;
-        v[idx(0, y)] = 0;
-        v[idx(NX - 1, y)] = 0;
-      }
-      for (let x = 0; x < NX; x++) {
-        u[idx(x, 0)] = U_INF;
-        u[idx(x, NY - 1)] = U_INF;
-        v[idx(x, 0)] = 0;
-        v[idx(x, NY - 1)] = 0;
-      }
-    }
-
-    function sampleVelocity(x: number, y: number): [number, number] {
-      if (x < 0 || x > NX - 1 || y < 0 || y > NY - 1) return [U_INF, 0];
-
-      const x0 = Math.floor(x);
-      const y0 = Math.floor(y);
-      const x1 = Math.min(NX - 1, x0 + 1);
-      const y1 = Math.min(NY - 1, y0 + 1);
-      const tx = x - x0;
-      const ty = y - y0;
-
-      const i00 = idx(x0, y0);
-      const i10 = idx(x1, y0);
-      const i01 = idx(x0, y1);
-      const i11 = idx(x1, y1);
-
-      return [
-        (u[i00] * (1 - tx) + u[i10] * tx) * (1 - ty) +
-          (u[i01] * (1 - tx) + u[i11] * tx) * ty,
-        (v[i00] * (1 - tx) + v[i10] * tx) * (1 - ty) +
-          (v[i01] * (1 - tx) + v[i11] * tx) * ty,
-      ];
-    }
-
-    function advectVorticity(dt: number) {
-      // Semi-Lagrangian advection plus explicit diffusion. This is stable at
-      // the deliberately low simulation resolution used by the portfolio.
-      const diffusion = VISCOSITY * dt;
-
-      for (let y = 1; y < NY - 1; y++) {
-        for (let x = 1; x < NX - 1; x++) {
-          const i = idx(x, y);
-          if (solid[i]) {
-            omegaNext[i] = 0;
-            continue;
-          }
-
-          const [vx, vy] = sampleVelocity(x, y);
-          const bx = clamp(x - vx * dt, 0, NX - 1);
-          const by = clamp(y - vy * dt, 0, NY - 1);
-          const x0 = Math.floor(bx);
-          const y0 = Math.floor(by);
-          const x1 = Math.min(NX - 1, x0 + 1);
-          const y1 = Math.min(NY - 1, y0 + 1);
-          const tx = bx - x0;
-          const ty = by - y0;
-
-          const advected =
-            (omega[idx(x0, y0)] * (1 - tx) +
-              omega[idx(x1, y0)] * tx) *
-              (1 - ty) +
-            (omega[idx(x0, y1)] * (1 - tx) +
-              omega[idx(x1, y1)] * tx) *
-              ty;
-
-          const lap =
-            omega[idx(x + 1, y)] +
-            omega[idx(x - 1, y)] +
-            omega[idx(x, y + 1)] +
-            omega[idx(x, y - 1)] -
-            4 * omega[i];
-
-          omegaNext[i] = advected + diffusion * lap;
-        }
-      }
-
-      // Inlet has zero incoming vorticity.
-      for (let y = 0; y < NY; y++) omegaNext[idx(0, y)] = 0;
-
-      // Lightweight no-slip wall vorticity (Thom-style boundary closure).
-      const r = bodyRadius;
-      const wallValue = -2 / Math.max(r * r, 1);
-      for (let y = 1; y < NY - 1; y++) {
-        for (let x = 1; x < NX - 1; x++) {
-          const i = idx(x, y);
-          if (!solid[i]) continue;
-
-          let neighbor = false;
-          const dirs = [
-            [1, 0],
-            [-1, 0],
-            [0, 1],
-            [0, -1],
-          ];
-          for (const [dx, dy] of dirs) {
-            if (!solid[idx(x + dx, y + dy)]) {
-              neighbor = true;
-              break;
-            }
-          }
-          if (neighbor) omegaNext[i] = wallValue;
-        }
-      }
-
-      omega.set(omegaNext);
+      applyInletBoundary();
+      enforceObstacle();
     }
 
     function stripeSource(y: number) {
@@ -295,58 +257,32 @@ export function FlowSimulation() {
     }
 
     function advectDye(dt: number) {
-      // Same semi-Lagrangian scheme as vorticity, but for a passive scalar
-      // (no wall boundary closure needed — dye is simply absorbed by the
-      // body) plus a small decay so the field settles instead of saturating.
+      dye0.set(dye);
+
       for (let y = 1; y < NY - 1; y++) {
         for (let x = 1; x < NX - 1; x++) {
           const i = idx(x, y);
           if (solid[i]) {
-            dyeNext[i] = 0;
+            dye[i] = 0;
             continue;
           }
-
-          const [vx, vy] = sampleVelocity(x, y);
-          const bx = clamp(x - vx * dt, 0, NX - 1);
-          const by = clamp(y - vy * dt, 0, NY - 1);
-          const x0 = Math.floor(bx);
-          const y0 = Math.floor(by);
-          const x1 = Math.min(NX - 1, x0 + 1);
-          const y1 = Math.min(NY - 1, y0 + 1);
-          const tx = bx - x0;
-          const ty = by - y0;
-
-          const advected =
-            (dye[idx(x0, y0)] * (1 - tx) + dye[idx(x1, y0)] * tx) *
-              (1 - ty) +
-            (dye[idx(x0, y1)] * (1 - tx) + dye[idx(x1, y1)] * tx) * ty;
-
-          const lap =
-            dye[idx(x + 1, y)] +
-            dye[idx(x - 1, y)] +
-            dye[idx(x, y + 1)] +
-            dye[idx(x, y - 1)] -
-            4 * dye[i];
-
-          dyeNext[i] = clamp(
-            advected * DYE_DECAY + DYE_DIFFUSION * dt * lap,
-            0,
-            1,
-          );
+          const bx = x - u[i] * dt;
+          const by = y - v[i] * dt;
+          // Bounded convex combination — no decay term, so intensity is
+          // only lost when a parcel is actually advected past the edges.
+          dye[i] = sampleField(dye0, bx, by);
         }
       }
 
-      // Continuous smoke source: thin alternating streaklines at the inlet.
+      // Continuous smoke source: alternating streaklines at the inlet.
       for (let y = 1; y < NY - 1; y++) {
-        dyeNext[idx(0, y)] = stripeSource(y);
-        dyeNext[idx(1, y)] = stripeSource(y);
+        dye[idx(0, y)] = stripeSource(y);
+        dye[idx(1, y)] = stripeSource(y);
       }
       for (let x = 0; x < NX; x++) {
-        dyeNext[idx(x, 0)] = 0;
-        dyeNext[idx(x, NY - 1)] = 0;
+        dye[idx(x, 0)] = 0;
+        dye[idx(x, NY - 1)] = 0;
       }
-
-      dye.set(dyeNext);
     }
 
     function drawSmoke() {
@@ -355,8 +291,6 @@ export function FlowSimulation() {
         for (let i = 0; i < NX * NY; i++) {
           const a = dye[i];
           const o = i * 4;
-          // Background rgb(7,8,9) -> smoke rgb(143,163,176), matching the
-          // site's existing muted accent color.
           data[o] = 7 + (143 - 7) * a;
           data[o + 1] = 8 + (163 - 8) * a;
           data[o + 2] = 9 + (176 - 9) * a;
@@ -376,7 +310,6 @@ export function FlowSimulation() {
         ctx.filter = "none";
       }
 
-      // Body.
       const sx = width / NX;
       const sy = height / NY;
       ctx.beginPath();
@@ -388,31 +321,29 @@ export function FlowSimulation() {
       ctx.stroke();
     }
 
-    function render(now: number) {
-      const dt = Math.min(0.045, Math.max(0.001, (now - last) / 1000));
-      last = now;
-
+    function step(dt: number) {
       if (hovering) {
         bodyX += (targetX - bodyX) * 0.12;
         bodyY += (targetY - bodyY) * 0.12;
         updateBodyMask();
       }
 
-      const scaledDt = dt * TIME_SCALE;
+      applyInletBoundary();
+      enforceObstacle();
+      project(PROJECT_ITERATIONS);
+      enforceObstacle();
+      advectVelocity(dt);
+      project(PROJECT_ITERATIONS);
+      advectDye(dt);
+    }
 
-      // The Poisson solve runs at a deliberately lower cadence than the
-      // renderer; the dye field is advected every frame using the last
-      // computed velocity for smooth motion.
-      if (frame % SOLVE_EVERY === 0) {
-        advectVorticity(scaledDt);
-        solveStreamfunction();
-        updateVelocity();
-      }
+    function render(now: number) {
+      const dt = Math.min(0.045, Math.max(0.001, (now - last) / 1000));
+      last = now;
 
-      advectDye(scaledDt);
+      step(dt * TIME_SCALE * 0.06);
       drawSmoke();
 
-      frame++;
       raf = requestAnimationFrame(render);
     }
 
@@ -436,8 +367,8 @@ export function FlowSimulation() {
     };
 
     resize();
-    solveStreamfunction();
-    updateVelocity();
+    applyInletBoundary();
+    project(PROJECT_ITERATIONS);
 
     window.addEventListener("resize", resize);
     canvas.addEventListener("pointermove", onPointerMove);
@@ -455,12 +386,12 @@ export function FlowSimulation() {
   return (
     <div className="relative">
       <p className="mb-2 text-[10px] tracking-[0.2em] text-[var(--muted)] uppercase">
-        2D Navier–Stokes flow — move the cylinder with your cursor
+        2D flow simulation — move the cylinder with your cursor
       </p>
       <canvas
         ref={canvasRef}
         className="h-48 w-full touch-none rounded-md border border-[var(--border)] sm:h-56"
-        aria-label="Interactive two-dimensional viscous flow simulation"
+        aria-label="Interactive two-dimensional flow simulation with smoke visualization"
       />
     </div>
   );
