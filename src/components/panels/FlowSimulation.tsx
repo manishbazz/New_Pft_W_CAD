@@ -5,10 +5,7 @@ import { useEffect, useRef } from "react";
 /**
  * Low-resolution 2D incompressible flow visualization using the Stable
  * Fluids method (Stam, 1999): direct velocity-field projection via
- * Gauss-Seidel relaxation to enforce incompressibility, rather than a
- * vorticity–streamfunction formulation. This is the same approach used by
- * reference Eulerian solvers that reproduce correct vortex shedding
- * (e.g. https://github.com/xzips/Euler-Fluid-Simulation):
+ * Gauss-Seidel relaxation to enforce incompressibility.
  *
  *   1. Apply boundary conditions (inlet, far-field, obstacle).
  *   2. Project: solve for pressure via Gauss-Seidel so that ∇·u = 0,
@@ -18,20 +15,35 @@ import { useEffect, useRef } from "react";
  *   5. Project again (advection reintroduces divergence).
  *   6. Advect dye (passive scalar) through the divergence-free field.
  *
- * No explicit viscosity term is used — as in the Euler-equation reference
- * above, the coarse grid's numerical dissipation is what produces shedding.
- * The dye field has no decay: it's a bounded convex combination under
+ * Each frame's total timestep is split into CFL-bounded sub-steps, each
+ * running the full pipeline above, so the flow can run fast without a
+ * single large step letting velocity tunnel through the obstacle.
+ *
+ * The dye field has no decay — it's a bounded convex combination under
  * semi-Lagrangian advection, so streaklines stay at full strength until
- * they're actually carried out through the open right boundary.
+ * they're actually carried out through the open right boundary. It's only
+ * sourced in a band around the obstacle's height, not the full domain.
+ *
+ * The obstacle is rendered directly from the solver's own solid-cell grid
+ * (blocky, low-res) rather than a smooth vector circle — what you see is
+ * literally the boundary the fluid solver sees.
  */
 
 const NX = 96;
 const NY = 48;
 const PROJECT_ITERATIONS = 26;
 const U_INF = 1.0;
-const TIME_SCALE = 20; // grid-units of advection per second
 
-// Smoke field tuning.
+// Overall flow speed: grid-units of advection per second, roughly.
+const BASE_TIME_SCALE = 28;
+// Upper bound on flow-time advanced per sub-step, to avoid tunneling
+// through the obstacle at high speed. Frames needing more than this get
+// split into multiple sub-steps automatically.
+const MAX_SUBSTEP_DT = 0.16;
+
+// Smoke source tuning: a band around the obstacle's height, not the full
+// canvas — "just wide enough" to reveal the wake.
+const SMOKE_BAND_MARGIN = 3; // grid rows beyond the obstacle radius
 const STRIPE_SPACING = 4; // grid rows per light/dark stripe pair
 const STRIPE_WIDTH = 2; // rows of "on" smoke within each pair
 const SMOKE_BLUR_PX = 1.1;
@@ -59,8 +71,6 @@ export function FlowSimulation() {
     const dye = new Float32Array(NX * NY);
     const dye0 = new Float32Array(NX * NY);
 
-    // Offscreen low-res surface the dye field is written into, then
-    // upscaled with bilinear smoothing onto the visible canvas.
     const fieldCanvas = document.createElement("canvas");
     fieldCanvas.width = NX;
     fieldCanvas.height = NY;
@@ -118,6 +128,17 @@ export function FlowSimulation() {
       }
     }
 
+    function isEdgeSolid(x: number, y: number) {
+      if (!solid[idx(x, y)]) return false;
+      if (x === 0 || x === NX - 1 || y === 0 || y === NY - 1) return true;
+      return (
+        !solid[idx(x + 1, y)] ||
+        !solid[idx(x - 1, y)] ||
+        !solid[idx(x, y + 1)] ||
+        !solid[idx(x, y - 1)]
+      );
+    }
+
     function resize() {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       width = canvas.clientWidth;
@@ -131,20 +152,17 @@ export function FlowSimulation() {
     }
 
     function applyInletBoundary() {
-      // Left inlet: fixed uniform inflow.
       for (let y = 0; y < NY; y++) {
         u[idx(0, y)] = U_INF;
         v[idx(0, y)] = 0;
         u[idx(1, y)] = U_INF;
       }
-      // Top/bottom far-field: uniform flow (free-slip).
       for (let x = 0; x < NX; x++) {
         u[idx(x, 0)] = U_INF;
         v[idx(x, 0)] = 0;
         u[idx(x, NY - 1)] = U_INF;
         v[idx(x, NY - 1)] = 0;
       }
-      // Right outlet: open boundary (zero-gradient).
       for (let y = 0; y < NY; y++) {
         u[idx(NX - 1, y)] = u[idx(NX - 2, y)];
         v[idx(NX - 1, y)] = v[idx(NX - 2, y)];
@@ -171,8 +189,6 @@ export function FlowSimulation() {
       }
     }
 
-    // Neighbor pressure with Neumann (zero-flux) mirroring across solid
-    // cells, so the projection never pulls flow into the obstacle.
     function neighborPressure(cx: number, cy: number, self: number) {
       const i = idx(cx, cy);
       return solid[i] ? self : p[i];
@@ -252,6 +268,8 @@ export function FlowSimulation() {
     }
 
     function stripeSource(y: number) {
+      const bandHalf = bodyRadius + SMOKE_BAND_MARGIN;
+      if (Math.abs(y - bodyY) > bandHalf) return 0;
       const band = Math.floor(y) % STRIPE_SPACING;
       return band < STRIPE_WIDTH ? 1 : 0;
     }
@@ -268,16 +286,14 @@ export function FlowSimulation() {
           }
           const bx = x - u[i] * dt;
           const by = y - v[i] * dt;
-          // Bounded convex combination — no decay term, so intensity is
-          // only lost when a parcel is actually advected past the edges.
           dye[i] = sampleField(dye0, bx, by);
         }
       }
 
-      // Continuous smoke source: alternating streaklines at the inlet.
       for (let y = 1; y < NY - 1; y++) {
-        dye[idx(0, y)] = stripeSource(y);
-        dye[idx(1, y)] = stripeSource(y);
+        const source = stripeSource(y);
+        dye[idx(0, y)] = source;
+        dye[idx(1, y)] = source;
       }
       for (let x = 0; x < NX; x++) {
         dye[idx(x, 0)] = 0;
@@ -310,15 +326,34 @@ export function FlowSimulation() {
         ctx.filter = "none";
       }
 
+      drawBody();
+    }
+
+    function drawBody() {
       const sx = width / NX;
       const sy = height / NY;
-      ctx.beginPath();
-      ctx.arc(bodyX * sx, bodyY * sy, bodyRadius * sx, 0, Math.PI * 2);
+      const pad = 0.6; // slight overlap to avoid seams between cells
+
+      // Occlude smoke under the solid region using the solver's own mask.
       ctx.fillStyle = "rgb(7, 8, 9)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(143, 163, 176, 0.95)";
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
+      for (let y = 0; y < NY; y++) {
+        for (let x = 0; x < NX; x++) {
+          if (solid[idx(x, y)]) {
+            ctx.fillRect(x * sx - pad, y * sy - pad, sx + pad * 2, sy + pad * 2);
+          }
+        }
+      }
+
+      // Outline just the boundary cells — the pixelated silhouette the
+      // solver actually sees, not a smooth vector circle.
+      ctx.fillStyle = "rgba(143, 163, 176, 0.95)";
+      for (let y = 0; y < NY; y++) {
+        for (let x = 0; x < NX; x++) {
+          if (isEdgeSolid(x, y)) {
+            ctx.fillRect(x * sx - pad, y * sy - pad, sx + pad * 2, sy + pad * 2);
+          }
+        }
+      }
     }
 
     function step(dt: number) {
@@ -341,7 +376,13 @@ export function FlowSimulation() {
       const dt = Math.min(0.045, Math.max(0.001, (now - last) / 1000));
       last = now;
 
-      step(dt * TIME_SCALE * 0.06);
+      // Split this frame's total advance into CFL-bounded sub-steps so we
+      // can run fast without a single big step tunneling through the body.
+      const totalDt = dt * BASE_TIME_SCALE;
+      const substeps = Math.max(1, Math.ceil(totalDt / MAX_SUBSTEP_DT));
+      const stepDt = totalDt / substeps;
+      for (let s = 0; s < substeps; s++) step(stepDt);
+
       drawSmoke();
 
       raf = requestAnimationFrame(render);
