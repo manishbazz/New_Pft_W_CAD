@@ -3,6 +3,7 @@
 import { ScrambleText } from "@/components/ScrambleText";
 import { NowPlaying } from "@/components/NowPlaying";
 import { MechanicalDecor } from "@/components/panels/MechanicalDecor";
+import { FlowSimulation } from "@/components/panels/FlowSimulation";
 import type { FavoriteSong } from "@/lib/types";
 
 type AboutPanelProps = {
@@ -66,6 +67,10 @@ export function AboutPanel({
 
         <div className="mt-10 max-w-sm">
           <NowPlaying statusUrl={spotifyStatusUrl} fallback={favoriteSong} />
+        </div>
+
+        <div className="mt-10 mb-4">
+          <FlowSimulation />
         </div>
       </div>
     </div>
