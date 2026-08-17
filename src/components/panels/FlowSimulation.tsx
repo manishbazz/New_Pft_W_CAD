@@ -32,10 +32,14 @@ export function FlowSimulation() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d", { alpha: false });
-    if (!ctx) return;
+    const canvasElement = canvasRef.current;
+    if (!canvasElement) return;
+
+    const context = canvasElement.getContext("2d", { alpha: false });
+    if (!context) return;
+
+    const canvas: HTMLCanvasElement = canvasElement;
+    const ctx: CanvasRenderingContext2D = context;
 
     const omega = new Float32Array(NX * NY);
     const omegaNext = new Float32Array(NX * NY);
