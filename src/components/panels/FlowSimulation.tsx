@@ -22,6 +22,12 @@ const U_INF = 1.0;
 const BASE_TIME_SCALE = 28;
 const MAX_SUBSTEP_DT = 0.16;
 
+// Scales only the dye/smoke advection speed, independent of the underlying
+// flow physics (vortex shedding, obstacle interaction, etc). >1 makes the
+// smoke visually race through the field faster; keep roughly in 1.0-2.0 to
+// avoid visible skipping/aliasing in the bilinear-sampled advection.
+const DYE_SPEED_MULTIPLIER = 1.5;
+
 const SMOKE_BAND_MARGIN = 3;
 const STRIPE_SPACING = 4;
 const STRIPE_WIDTH = 2;
@@ -305,8 +311,8 @@ export function FlowSimulation() {
             dye[i] = 0;
             continue;
           }
-          const bx = x - u[i] * dt;
-          const by = y - v[i] * dt;
+          const bx = x - u[i] * dt * DYE_SPEED_MULTIPLIER;
+          const by = y - v[i] * dt * DYE_SPEED_MULTIPLIER;
           dye[i] = sampleField(dye0, bx, by);
         }
       }
