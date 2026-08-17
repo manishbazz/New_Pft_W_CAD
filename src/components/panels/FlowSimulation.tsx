@@ -1,28 +1,19 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Low-resolution 2D incompressible flow visualization using the Stable
  * Fluids method (Stam, 1999): direct velocity-field projection via
  * Gauss-Seidel relaxation to enforce incompressibility.
  *
- * Grid resolution is derived from the canvas's actual aspect ratio on
- * every resize, keeping cells square (sx === sy) so the obstacle renders
- * as a true circle instead of stretching with the container's width.
- *
- * The obstacle is rendered directly from the solver's own solid-cell grid
- * (blocky, low-res) rather than a smooth vector circle — what you see is
- * literally the boundary the fluid solver sees.
- *
- * The dye field has no decay — it's a bounded convex combination under
- * semi-Lagrangian advection, so streaklines stay at full strength until
- * they're actually carried out through the open right boundary. It's
- * sourced in a fixed band centered on the domain's vertical middle,
- * independent of where the obstacle is dragged.
+ * The simulation only advances while explicitly playing. It starts paused
+ * (a static setup frame is drawn once) and the loop is torn down entirely
+ * — not just skipped — whenever the tab is hidden or the user pauses, so
+ * it costs nothing when not actively visible and running.
  */
 
-const BASE_NY = 64; // vertical grid resolution baseline
+const BASE_NY = 64;
 const MIN_NX = 80;
 const MAX_NX = 220;
 const PROJECT_ITERATIONS = 30;
@@ -31,14 +22,20 @@ const U_INF = 1.0;
 const BASE_TIME_SCALE = 28;
 const MAX_SUBSTEP_DT = 0.16;
 
-const SMOKE_BAND_MARGIN = 3; // grid rows beyond the obstacle radius
+const SMOKE_BAND_MARGIN = 3;
 const STRIPE_SPACING = 4;
 const STRIPE_WIDTH = 2;
 const SMOKE_BLUR_PX = 1.1;
 
 export function FlowSimulation() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(isPlaying);
+  const controllerRef = useRef<{ start: () => void; stop: () => void } | null>(
+    null,
+  );
 
+  // Mount: set up the solver, canvas, listeners. Does not start the loop.
   useEffect(() => {
     const canvasElement = canvasRef.current;
     if (!canvasElement) return;
@@ -70,8 +67,6 @@ export function FlowSimulation() {
     let height = 0;
     let dpr = 1;
 
-    // Obstacle position tracked as fractions of the domain (0..1) so it
-    // survives grid resolution changes on resize without recalculation.
     let bodyFracX = 0.42;
     let bodyFracY = 0.5;
     let targetFracX = bodyFracX;
@@ -81,6 +76,7 @@ export function FlowSimulation() {
     let bodyRadius = 1;
     let hovering = false;
     let raf = 0;
+    let running = false;
     let last = performance.now();
 
     const idx = (x: number, y: number) => y * NX + x;
@@ -291,7 +287,6 @@ export function FlowSimulation() {
       enforceObstacle();
     }
 
-    // Fixed at the domain's vertical middle — does not track the obstacle.
     function stripeSource(y: number) {
       const centerY = NY / 2;
       const bandHalf = bodyRadius + SMOKE_BAND_MARGIN;
@@ -396,6 +391,8 @@ export function FlowSimulation() {
     }
 
     function render(now: number) {
+      if (!running) return;
+
       const dt = Math.min(0.045, Math.max(0.001, (now - last) / 1000));
       last = now;
 
@@ -408,6 +405,20 @@ export function FlowSimulation() {
 
       raf = requestAnimationFrame(render);
     }
+
+    function start() {
+      if (running) return;
+      running = true;
+      last = performance.now(); // avoid a huge dt jump after being paused
+      raf = requestAnimationFrame(render);
+    }
+
+    function stop() {
+      running = false;
+      cancelAnimationFrame(raf);
+    }
+
+    controllerRef.current = { start, stop };
 
     const onPointerMove = (event: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
@@ -430,34 +441,84 @@ export function FlowSimulation() {
       hovering = false;
     };
 
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stop();
+      } else if (isPlayingRef.current) {
+        start();
+      }
+    };
+
     allocateGrid(MIN_NX, BASE_NY);
     resize();
     applyInletBoundary();
     project(PROJECT_ITERATIONS);
+    drawSmoke(); // static setup frame, shown behind the play button
 
     window.addEventListener("resize", resize);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerleave", onPointerLeave);
-    raf = requestAnimationFrame(render);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
-      cancelAnimationFrame(raf);
+      stop();
       window.removeEventListener("resize", resize);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerleave", onPointerLeave);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
+
+  // Reacts to the play/pause button. Also keeps a ref in sync so the
+  // visibilitychange handler (set up once, above) knows current intent.
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+    if (isPlaying) {
+      controllerRef.current?.start();
+    } else {
+      controllerRef.current?.stop();
+    }
+  }, [isPlaying]);
 
   return (
     <div className="relative">
       <p className="mb-2 text-[10px] tracking-[0.2em] text-[var(--muted)] uppercase">
         2D flow simulation — move the cylinder with your cursor
       </p>
-      <canvas
-        ref={canvasRef}
-        className="h-48 w-full touch-none rounded-md border border-[var(--border)] sm:h-56"
-        aria-label="Interactive two-dimensional flow simulation with smoke visualization"
-      />
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          className="h-48 w-full touch-none rounded-md border border-[var(--border)] sm:h-56"
+          aria-label="Interactive two-dimensional flow simulation with smoke visualization"
+        />
+        {!isPlaying && (
+          <button
+            type="button"
+            onClick={() => setIsPlaying(true)}
+            className="absolute inset-0 flex items-center justify-center gap-2 rounded-md bg-[rgba(7,8,9,0.35)] text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+            aria-label="Start flow simulation"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[rgba(7,8,9,0.7)]">
+              <svg viewBox="0 0 16 16" className="h-4 w-4 translate-x-[1px]" fill="currentColor" aria-hidden="true">
+                <path d="M4 2.5v11l10-5.5-10-5.5z" />
+              </svg>
+            </span>
+            <span className="text-[10px] tracking-[0.2em] uppercase">Run simulation</span>
+          </button>
+        )}
+        {isPlaying && (
+          <button
+            type="button"
+            onClick={() => setIsPlaying(false)}
+            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[rgba(7,8,9,0.7)] text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+            aria-label="Pause flow simulation"
+          >
+            <svg viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor" aria-hidden="true">
+              <path d="M3 2h3v12H3zM10 2h3v12h-3z" />
+            </svg>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
