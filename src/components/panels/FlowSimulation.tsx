@@ -19,7 +19,7 @@ const MAX_NX = 220;
 const PROJECT_ITERATIONS = 30;
 const U_INF = 1.0;
 
-const BASE_TIME_SCALE = 28;
+const BASE_TIME_SCALE = 35;
 const MAX_SUBSTEP_DT = 0.16;
 
 // Scales only the dye/smoke advection speed, independent of the underlying
@@ -29,7 +29,7 @@ const MAX_SUBSTEP_DT = 0.16;
 const DYE_SPEED_MULTIPLIER = 1.5;
 
 const SMOKE_BAND_MARGIN = 3;
-const STRIPE_SPACING = 4;
+const STRIPE_SPACING = 3;
 const STRIPE_WIDTH = 2;
 const SMOKE_BLUR_PX = 1.1;
 
