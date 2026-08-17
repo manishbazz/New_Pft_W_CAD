@@ -14,6 +14,12 @@ import { useEffect, useRef } from "react";
  * We deliberately solve on a coarse grid and render to a normal-resolution
  * canvas. This keeps the simulation inexpensive while retaining a real
  * viscous wake behind the mouse-controlled circular body.
+ *
+ * Visualization: a passive dye/density field is continuously injected as
+ * thin streaklines at the inlet and advected + lightly diffused through the
+ * same velocity field used by the vorticity solve. This reads as smoke and
+ * reveals vortex shedding directly, since the alternating bands roll up
+ * into the wake instead of staying straight.
  */
 
 const NX = 96;
@@ -23,10 +29,14 @@ const SOLVE_EVERY = 2;
 const U_INF = 1.0;
 const RE = 80;
 const VISCOSITY = 1 / RE;
-const MAX_PARTICLES = 150;
-const SEED_ROWS = 15;
+const TIME_SCALE = 16; // matches original grid-units-per-second scaling
 
-type Particle = { x: number; y: number };
+// Smoke field tuning.
+const DYE_DIFFUSION = VISCOSITY * 0.6; // slightly sharper than momentum diffusion
+const DYE_DECAY = 0.995; // gentle fade so the field doesn't saturate
+const STRIPE_SPACING = 4; // grid rows per light/dark stripe pair
+const STRIPE_WIDTH = 2; // rows of "on" smoke within each pair
+const SMOKE_BLUR_PX = 1.25;
 
 export function FlowSimulation() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,6 +58,17 @@ export function FlowSimulation() {
     const u = new Float32Array(NX * NY);
     const v = new Float32Array(NX * NY);
     const solid = new Uint8Array(NX * NY);
+    const dye = new Float32Array(NX * NY);
+    const dyeNext = new Float32Array(NX * NY);
+
+    // Offscreen low-res surface the dye field is written into, then
+    // upscaled with bilinear smoothing onto the visible canvas. This is
+    // what turns a coarse scalar field into something that reads as smoke.
+    const fieldCanvas = document.createElement("canvas");
+    fieldCanvas.width = NX;
+    fieldCanvas.height = NY;
+    const fieldCtx = fieldCanvas.getContext("2d");
+    const fieldImage = fieldCtx?.createImageData(NX, NY) ?? null;
 
     let width = 0;
     let height = 0;
@@ -61,8 +82,6 @@ export function FlowSimulation() {
     let raf = 0;
     let last = performance.now();
     let frame = 0;
-
-    const particles: Particle[] = [];
 
     const idx = (x: number, y: number) => y * NX + x;
     const clamp = (x: number, lo: number, hi: number) =>
@@ -79,16 +98,6 @@ export function FlowSimulation() {
           const dy = y - bodyY;
           if (dx * dx + dy * dy <= r2) solid[idx(x, y)] = 1;
         }
-      }
-    }
-
-    function resetParticles() {
-      particles.length = 0;
-      for (let i = 0; i < MAX_PARTICLES; i++) {
-        particles.push({
-          x: Math.random() * NX,
-          y: 2 + Math.random() * (NY - 4),
-        });
       }
     }
 
@@ -280,85 +289,96 @@ export function FlowSimulation() {
       omega.set(omegaNext);
     }
 
-    function seedParticles() {
-      for (let row = 0; row < SEED_ROWS; row++) {
-        const y = 2 + (row / (SEED_ROWS - 1)) * (NY - 4);
-        particles[row].x = Math.random() * 4;
-        particles[row].y = y;
-      }
+    function stripeSource(y: number) {
+      const band = Math.floor(y) % STRIPE_SPACING;
+      return band < STRIPE_WIDTH ? 1 : 0;
     }
 
-    function drawParticles(dt: number) {
-      ctx.fillStyle = "rgba(7, 8, 9, 0.16)";
-      ctx.fillRect(0, 0, width, height);
+    function advectDye(dt: number) {
+      // Same semi-Lagrangian scheme as vorticity, but for a passive scalar
+      // (no wall boundary closure needed — dye is simply absorbed by the
+      // body) plus a small decay so the field settles instead of saturating.
+      for (let y = 1; y < NY - 1; y++) {
+        for (let x = 1; x < NX - 1; x++) {
+          const i = idx(x, y);
+          if (solid[i]) {
+            dyeNext[i] = 0;
+            continue;
+          }
 
-      const sx = width / NX;
-      const sy = height / NY;
+          const [vx, vy] = sampleVelocity(x, y);
+          const bx = clamp(x - vx * dt, 0, NX - 1);
+          const by = clamp(y - vy * dt, 0, NY - 1);
+          const x0 = Math.floor(bx);
+          const y0 = Math.floor(by);
+          const x1 = Math.min(NX - 1, x0 + 1);
+          const y1 = Math.min(NY - 1, y0 + 1);
+          const tx = bx - x0;
+          const ty = by - y0;
 
-      ctx.fillStyle = "rgba(143, 163, 176, 0.72)";
-      for (const p of particles) {
-        const [vx, vy] = sampleVelocity(p.x, p.y);
-        const px = p.x;
-        const py = p.y;
+          const advected =
+            (dye[idx(x0, y0)] * (1 - tx) + dye[idx(x1, y0)] * tx) *
+              (1 - ty) +
+            (dye[idx(x0, y1)] * (1 - tx) + dye[idx(x1, y1)] * tx) * ty;
 
-        p.x += vx * dt * 16;
-        p.y += vy * dt * 16;
+          const lap =
+            dye[idx(x + 1, y)] +
+            dye[idx(x - 1, y)] +
+            dye[idx(x, y + 1)] +
+            dye[idx(x, y - 1)] -
+            4 * dye[i];
 
-        const dx = p.x - bodyX;
-        const dy = p.y - bodyY;
-        if (
-          p.x > NX + 2 ||
-          p.y < 0 ||
-          p.y > NY ||
-          dx * dx + dy * dy < bodyRadius * bodyRadius
-        ) {
-          p.x = -Math.random() * 3;
-          p.y = 2 + Math.random() * (NY - 4);
-          continue;
+          dyeNext[i] = clamp(
+            advected * DYE_DECAY + DYE_DIFFUSION * dt * lap,
+            0,
+            1,
+          );
         }
-
-        const x0 = px * sx;
-        const y0 = py * sy;
-        const x1 = p.x * sx;
-        const y1 = p.y * sy;
-
-        ctx.beginPath();
-        ctx.moveTo(x0, y0);
-        ctx.lineTo(x1, y1);
-        ctx.strokeStyle = "rgba(143, 163, 176, 0.55)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
       }
 
-      // A few continuous instantaneous streamlines are drawn from the inlet.
-      // These are reconstructed from the current velocity field.
-      ctx.strokeStyle = "rgba(143, 163, 176, 0.28)";
-      ctx.lineWidth = 0.7;
+      // Continuous smoke source: thin alternating streaklines at the inlet.
+      for (let y = 1; y < NY - 1; y++) {
+        dyeNext[idx(0, y)] = stripeSource(y);
+        dyeNext[idx(1, y)] = stripeSource(y);
+      }
+      for (let x = 0; x < NX; x++) {
+        dyeNext[idx(x, 0)] = 0;
+        dyeNext[idx(x, NY - 1)] = 0;
+      }
 
-      for (let row = 0; row < SEED_ROWS; row++) {
-        let x = 0;
-        let y = 2 + (row / (SEED_ROWS - 1)) * (NY - 4);
-        ctx.beginPath();
-        ctx.moveTo(x * sx, y * sy);
+      dye.set(dyeNext);
+    }
 
-        for (let step = 0; step < 130 && x < NX; step++) {
-          const [vx, vy] = sampleVelocity(x, y);
-          const speed = Math.max(0.2, Math.hypot(vx, vy));
-          x += (vx / speed) * 0.65;
-          y += (vy / speed) * 0.65;
-
-          if (y < 0 || y > NY) break;
-
-          const dx = x - bodyX;
-          const dy = y - bodyY;
-          if (dx * dx + dy * dy < bodyRadius * bodyRadius) break;
-
-          ctx.lineTo(x * sx, y * sy);
+    function drawSmoke() {
+      if (fieldCtx && fieldImage) {
+        const data = fieldImage.data;
+        for (let i = 0; i < NX * NY; i++) {
+          const a = dye[i];
+          const o = i * 4;
+          // Background rgb(7,8,9) -> smoke rgb(143,163,176), matching the
+          // site's existing muted accent color.
+          data[o] = 7 + (143 - 7) * a;
+          data[o + 1] = 8 + (163 - 8) * a;
+          data[o + 2] = 9 + (176 - 9) * a;
+          data[o + 3] = 255;
         }
-        ctx.stroke();
+        fieldCtx.putImageData(fieldImage, 0, 0);
+      }
+
+      ctx.fillStyle = "rgb(7, 8, 9)";
+      ctx.fillRect(0, 0, width, height);
+
+      if (fieldCtx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.filter = `blur(${SMOKE_BLUR_PX}px)`;
+        ctx.drawImage(fieldCanvas, 0, 0, width, height);
+        ctx.filter = "none";
       }
 
       // Body.
+      const sx = width / NX;
+      const sy = height / NY;
       ctx.beginPath();
       ctx.arc(bodyX * sx, bodyY * sy, bodyRadius * sx, 0, Math.PI * 2);
       ctx.fillStyle = "rgb(7, 8, 9)";
@@ -378,14 +398,19 @@ export function FlowSimulation() {
         updateBodyMask();
       }
 
-      // The solver runs at a deliberately lower cadence than the renderer.
+      const scaledDt = dt * TIME_SCALE;
+
+      // The Poisson solve runs at a deliberately lower cadence than the
+      // renderer; the dye field is advected every frame using the last
+      // computed velocity for smooth motion.
       if (frame % SOLVE_EVERY === 0) {
-        advectVorticity(dt * 16);
+        advectVorticity(scaledDt);
         solveStreamfunction();
         updateVelocity();
       }
 
-      drawParticles(dt);
+      advectDye(scaledDt);
+      drawSmoke();
 
       frame++;
       raf = requestAnimationFrame(render);
@@ -411,8 +436,6 @@ export function FlowSimulation() {
     };
 
     resize();
-    resetParticles();
-    seedParticles();
     solveStreamfunction();
     updateVelocity();
 
