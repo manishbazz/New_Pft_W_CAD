@@ -7,6 +7,7 @@ import {
   useState,
   type ComponentType,
 } from "react";
+import { HomeConvectionBackground } from "@/components/HomeConvectionBackground";
 import { Nav } from "@/components/Nav";
 import { AboutPanel } from "@/components/panels/AboutPanel";
 import { ContactPanel } from "@/components/panels/ContactPanel";
@@ -237,6 +238,8 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
       }}
     >
       <Nav active={active} onNavigate={goToPanel} />
+
+      {active === "home" && <HomeConvectionBackground />}
 
       <div className="h-full w-full overflow-hidden">
         <div
