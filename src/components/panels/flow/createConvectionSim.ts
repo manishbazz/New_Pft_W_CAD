@@ -302,7 +302,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   let raf = 0;
   let running = false;
   let last = performance.now();
-  let reducedMotion = false;
+
 
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
@@ -505,7 +505,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   }
 
   function start() {
-    if (running || reducedMotion) return;
+    if (running) return;
     running = true;
     last = performance.now();
     raf = requestAnimationFrame(render);
@@ -521,14 +521,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     else start();
   };
 
-  const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-  reducedMotion = motionQuery.matches;
-  const onMotionChange = () => {
-    reducedMotion = motionQuery.matches;
-    if (reducedMotion) stop();
-    else if (!document.hidden) start();
-  };
-  motionQuery.addEventListener("change", onMotionChange);
+
 
   resize();
   applyBoundary();
@@ -546,7 +539,6 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
       stop();
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      motionQuery.removeEventListener("change", onMotionChange);
       freeGrid();
     },
   };
