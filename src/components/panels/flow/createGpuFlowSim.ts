@@ -606,6 +606,9 @@ export function createGpuFlowSim(
     );
     hovering = true;
   };
+  const onPointerLeave = () => {
+    hovering = false;
+  };
   const onVisibilityChange = () => {
     if (document.hidden) stop();
     else if (isPlayingRef.current) start();
