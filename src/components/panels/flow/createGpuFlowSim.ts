@@ -15,15 +15,15 @@ import type { FlowController } from "./types";
 const BASE_NY = 64;
 const MIN_NX = 80;
 const MAX_NX = 220;
-const PROJECT_ITERATIONS = 30;
+const PROJECT_ITERATIONS = 24;
 
 const BASE_TIME_SCALE = 50;
-const MAX_SUBSTEP_DT = 0.16;
+const MAX_SUBSTEP_DT = 0.08;
 const DYE_SPEED_MULTIPLIER = 1.5;
 
 const SMOKE_BAND_MARGIN = 3;
 const STRIPE_SPACING = 3;
-const STRIPE_WIDTH = 2;
+const STRIPE_WIDTH = 1;
 
 const VERT_SRC = `#version 300 es
 in vec2 aPos;
