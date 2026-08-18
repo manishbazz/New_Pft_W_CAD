@@ -12,12 +12,12 @@ import type { FlowController } from "./types";
  * getContext('webgl2') on `canvas` here permanently commits it to WebGL.
  */
 
-const BASE_NY = 64;
-const MIN_NX = 80;
-const MAX_NX = 220;
-const PROJECT_ITERATIONS = 30;
+const BASE_NY = 120;
+const MIN_NX = 140;
+const MAX_NX = 340;
+const PROJECT_ITERATIONS = 40;
 
-const BASE_TIME_SCALE = 35;
+const BASE_TIME_SCALE = 55;
 const MAX_SUBSTEP_DT = 0.16;
 const DYE_SPEED_MULTIPLIER = 1.5;
 
@@ -599,11 +599,12 @@ export function createGpuFlowSim(
     const marginX = (bodyRadiusGrid + 2) / NX;
     const marginY = (bodyRadiusGrid + 2) / NY;
     targetFracX = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), marginX, 1 - marginX);
-    targetFracY = clamp((event.clientY - rect.top) / Math.max(rect.height, 1), marginY, 1 - marginY);
+    targetFracY = clamp(
+      1 - (event.clientY - rect.top) / Math.max(rect.height, 1),
+      marginY,
+      1 - marginY,
+    );
     hovering = true;
-  };
-  const onPointerLeave = () => {
-    hovering = false;
   };
   const onVisibilityChange = () => {
     if (document.hidden) stop();
