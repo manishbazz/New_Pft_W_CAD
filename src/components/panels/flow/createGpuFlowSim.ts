@@ -12,12 +12,12 @@ import type { FlowController } from "./types";
  * getContext('webgl2') on `canvas` here permanently commits it to WebGL.
  */
 
-const BASE_NY = 120;
-const MIN_NX = 140;
-const MAX_NX = 340;
-const PROJECT_ITERATIONS = 40;
+const BASE_NY = 64;
+const MIN_NX = 80;
+const MAX_NX = 220;
+const PROJECT_ITERATIONS = 30;
 
-const BASE_TIME_SCALE = 55;
+const BASE_TIME_SCALE = 50;
 const MAX_SUBSTEP_DT = 0.16;
 const DYE_SPEED_MULTIPLIER = 1.5;
 
