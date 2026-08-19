@@ -29,12 +29,13 @@ import type { FlowController } from "./types";
  * floor sits at gridPos.y = 0; the open "chimney" outflow is at
  * gridPos.y = NY.
  *
- * RENDER: plain white smoke (alpha follows temperature — cold is fully
- * transparent, hot is opaque white) instead of a color gradient, with a
- * velocity-weighted blur: the render pass takes a few extra taps of the
- * temperature field along the local flow direction, spread further apart
- * where the flow is faster, so fast-moving smoke smears while still
- * smoke stays sharp — rather than a single fixed blur radius everywhere.
+ * RENDER: velocity-magnitude contour, in the style of a CFD post-processor
+ * plot, instead of smoke. Speed is quantized into grayscale bands with a
+ * thin isoline at each band edge; alpha follows speed too, so still air
+ * is transparent (page shows through) and the plume itself is visible.
+ * No directional motion blur — a narrow high-speed core reads as correct
+ * for a contour plot, whereas the old smoke render's blur made the same
+ * core look like a streaky, unnaturally thin jet.
  *
  * GPU-only: no CPU fallback. This is a decorative, always-on background,
  * and a JS for-loop version running continuously behind page content is a
@@ -211,36 +212,38 @@ const RENDER_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outColor;
-uniform sampler2D uTemp;
 uniform sampler2D uVel;
-uniform vec2 uTexel;
 
-const int SAMPLES = 5;
+// Reference speed the contour scale is normalized against — tuned to the
+// plume's typical peak speed at BUOYANCY = ${BUOYANCY}. Raise it if the
+// core of the plume is pinned white/saturated; lower it if the whole
+// field looks dim.
+const float MAX_SPEED = 5.0;
+const float BANDS = 9.0;
 
 void main() {
-  vec2 vel = texture(uVel, vUv).xy;
-  float speed = length(vel);
+  // Velocity-magnitude contour, like a CFD post-processor plot, instead
+  // of a temperature-driven "smoke" alpha. No directional motion blur:
+  // that pass was what made a fast, thin plume core read as a streaky
+  // jet. A banded contour doesn't need to look like billowing smoke —
+  // a narrow high-speed core in the center of the plume is exactly what
+  // a real convection contour plot looks like, so it reads as correct
+  // rather than as a rendering artifact.
+  float speed = length(texture(uVel, vUv).xy);
+  float s = clamp(speed / MAX_SPEED, 0.0, 1.0);
 
-  // Motion blur strength scales with local flow speed — still smoke
-  // stays sharp, fast-moving smoke smears along its direction of
-  // travel. No fixed/uniform blur radius.
-  vec2 dir = speed > 0.0001 ? vel / speed : vec2(0.0, 1.0);
-  float blurAmount = clamp(speed * 0.5, 0.0, 5.0);
+  // Quantize into discrete bands (dark = slow, white = fast).
+  float banded = floor(s * BANDS) / BANDS;
 
-  float t = 0.0;
-  float wSum = 0.0;
-  for (int i = 0; i < SAMPLES; i++) {
-    float f = (float(i) / float(SAMPLES - 1)) - 0.5; // -0.5 .. 0.5
-    vec2 uv = vUv + dir * f * blurAmount * uTexel;
-    float w = 1.0 - abs(f) * 0.8;
-    t += clamp(texture(uTemp, uv).r, 0.0, 1.0) * w;
-    wSum += w;
-  }
-  t = clamp(t / wSum, 0.0, 1.0);
+  // Thin dark line at each band boundary, like an isoline.
+  float edge = abs(fract(s * BANDS) - 0.5) * 2.0;
+  float line = 1.0 - smoothstep(0.0, 0.12, edge);
+  vec3 col = mix(vec3(banded), vec3(0.0), line * 0.45);
 
-  // Cold -> transparent (page background shows through). Hot -> white smoke.
-  float alpha = smoothstep(0.03, 0.9, t) * 0.8;
-  outColor = vec4(vec3(1.0), alpha);
+  // Still air -> transparent (page background shows through).
+  // Moving air -> visible, capped so it stays a background element.
+  float alpha = smoothstep(0.015, 0.2, s) * 0.55;
+  outColor = vec4(col, alpha);
 }`;
 
 export function createConvectionSim(canvas: HTMLCanvasElement): FlowController | null {
@@ -283,7 +286,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   const jacobiProg = createGLProgram(gl, JACOBI_FRAG, ["uPressure", "uDivergence", "uTexel"], VERT_SRC);
   const gradientProg = createGLProgram(gl, GRADIENT_SUBTRACT_FRAG, ["uVel", "uPressure", "uTexel"], VERT_SRC);
   const advectTempProg = createGLProgram(gl, ADVECT_TEMP_FRAG, ["uTemp", "uVel", "uTexel", "uGridSize", "uDt", "uSourceTemp"], VERT_SRC);
-  const renderProg = createGLProgram(gl, RENDER_FRAG, ["uTemp", "uVel", "uTexel"], VERT_SRC);
+  const renderProg = createGLProgram(gl, RENDER_FRAG, ["uVel"], VERT_SRC);
 
   if (!boundaryProg || !buoyancyProg || !advectVelProg || !divergenceProg || !jacobiProg || !gradientProg || !advectTempProg || !renderProg) {
     console.warn("[convection-sim] one or more shader programs failed to compile/link — smoke bg disabled.");
@@ -441,11 +444,8 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
 
     const { uniforms } = renderProg!;
     runPass(renderProg!, null, () => {
-      bindTex(0, temperature!.read.texture);
-      bindTex(1, velocity!.read.texture);
-      gl!.uniform1i(uniforms.uTemp, 0);
-      gl!.uniform1i(uniforms.uVel, 1);
-      gl!.uniform2f(uniforms.uTexel, 1 / NX, 1 / NY);
+      bindTex(0, velocity!.read.texture);
+      gl!.uniform1i(uniforms.uVel, 0);
     });
   }
 
