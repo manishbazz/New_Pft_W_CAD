@@ -80,8 +80,15 @@ void main() {
     vel = vec2(0.0);
   }
   // gridPos.y ~ 0 is the physical BOTTOM of the canvas — the heated floor.
+  // This is a VENT, not a solid wall: only kill lateral drift (vel.x) so
+  // fluid can't slide sideways along it. Leave vel.y alone — buoyancy
+  // needs to be able to push fluid straight up through this row. Fully
+  // zeroing vel.y here (as a true no-slip wall would) traps every bit of
+  // buoyant momentum at the floor forever, since project() is the only
+  // thing that spreads a cell's velocity to its neighbors, and it never
+  // gets a nonzero floor velocity to work with.
   if (gridPos.y < 1.0) {
-    vel = vec2(0.0);
+    vel.x = 0.0;
   }
   // gridPos.y ~ NY is the physical TOP — open chimney, zero-gradient.
   if (gridPos.y > uGridSize.y - 1.0) {
@@ -123,7 +130,8 @@ void main() {
   vec2 newVel = texture(uVel, backUv).xy;
 
   if (gridPos.x < 1.0 || gridPos.x > uGridSize.x - 1.0) newVel = vec2(0.0);
-  if (gridPos.y < 1.0) newVel = vec2(0.0);
+  // Floor vent: kill lateral drift only, same reasoning as BOUNDARY_FRAG.
+  if (gridPos.y < 1.0) newVel.x = 0.0;
   if (gridPos.y > uGridSize.y - 1.0) {
     newVel = texture(uVel, vUv - vec2(0.0, uTexel.y)).xy;
   }
@@ -452,13 +460,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   function simStep(dt: number) {
     applyBoundary();
     applyBuoyancy(dt);
-    // NOTE: no applyBoundary() here. The floor's no-slip condition still
-    // gets enforced (right below, before advectVelocity), but project()
-    // needs to see the buoyant impulse at the floor row FIRST — the
-    // pressure solve is what actually pushes that momentum into row 1
-    // and above. Zeroing the floor velocity before project() (as this
-    // used to do) discarded the buoyancy step entirely: heat would stay
-    // pinned to the floor row forever with nothing ever rising.
+    applyBoundary();
     project();
     applyBoundary();
     advectVelocity(dt);
