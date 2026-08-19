@@ -452,7 +452,13 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   function simStep(dt: number) {
     applyBoundary();
     applyBuoyancy(dt);
-    applyBoundary();
+    // NOTE: no applyBoundary() here. The floor's no-slip condition still
+    // gets enforced (right below, before advectVelocity), but project()
+    // needs to see the buoyant impulse at the floor row FIRST — the
+    // pressure solve is what actually pushes that momentum into row 1
+    // and above. Zeroing the floor velocity before project() (as this
+    // used to do) discarded the buoyancy step entirely: heat would stay
+    // pinned to the floor row forever with nothing ever rising.
     project();
     applyBoundary();
     advectVelocity(dt);
