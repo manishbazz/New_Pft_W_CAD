@@ -1,0 +1,456 @@
+diff --git a/src/components/panels/AboutPanel.tsx b/src/components/panels/AboutPanel.tsx
++++ b/src/components/panels/AboutPanel.tsx
+@@ -3,6 +3,7 @@
+ import { ScrambleText } from "@/components/ScrambleText";
+ import { NowPlaying } from "@/components/NowPlaying";
+ import { MechanicalDecor } from "@/components/panels/MechanicalDecor";
++import { FlowSimulation } from "@/components/panels/FlowSimulation";
+ import type { FavoriteSong } from "@/lib/types";
+ 
+ type AboutPanelProps = {
+@@ -67,6 +68,8 @@
+         <div className="mt-10 max-w-sm">
+           <NowPlaying statusUrl={spotifyStatusUrl} fallback={favoriteSong} />
+         </div>
++
++        <FlowSimulation active={active} />
+       </div>
+     </div>
+   );
+
+diff --git a/src/components/panels/FlowSimulation.tsx b/src/components/panels/FlowSimulation.tsx
++++ b/src/components/panels/FlowSimulation.tsx
+@@ -0,0 +1,433 @@
++"use client";
++
++import { useEffect, useRef } from "react";
++
++type FlowSimulationProps = {
++  active?: boolean;
++};
++
++const NX = 96;
++const NY = 48;
++const SOLVER_PASSES = 8;
++const DIFFUSION_PASSES = 3;
++const STEPS_PER_FRAME = 2;
++const FLOW_SPEED = 1;
++const VISCOSITY = 0.0008;
++const PARTICLE_COUNT = 140;
++
++function clamp(value: number, min: number, max: number) {
++  return Math.max(min, Math.min(max, value));
++}
++
++function idx(x: number, y: number) {
++  return x + y * NX;
++}
++
++function sample(field: Float32Array, x: number, y: number) {
++  const fx = clamp(x, 0, NX - 1);
++  const fy = clamp(y, 0, NY - 1);
++  const x0 = Math.floor(fx);
++  const y0 = Math.floor(fy);
++  const x1 = Math.min(x0 + 1, NX - 1);
++  const y1 = Math.min(y0 + 1, NY - 1);
++  const tx = fx - x0;
++  const ty = fy - y0;
++  const a = field[idx(x0, y0)];
++  const b = field[idx(x1, y0)];
++  const c = field[idx(x0, y1)];
++  const d = field[idx(x1, y1)];
++  return a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + c * (1 - tx) * ty + d * tx * ty;
++}
++
++function sampleVelocity(u: Float32Array, v: Float32Array, x: number, y: number) {
++  return [sample(u, x, y), sample(v, x, y)] as const;
++}
++
++function resetField(u: Float32Array, v: Float32Array, p: Float32Array) {
++  u.fill(FLOW_SPEED);
++  v.fill(0);
++  p.fill(0);
++}
++
++function enforceSolid(
++  u: Float32Array,
++  v: Float32Array,
++  solid: Uint8Array,
++  bodyU: number,
++  bodyV: number,
++) {
++  for (let i = 0; i < solid.length; i += 1) {
++    if (solid[i]) {
++      u[i] = bodyU;
++      v[i] = bodyV;
++    }
++  }
++}
++
++function advect(
++  dst: Float32Array,
++  src: Float32Array,
++  u: Float32Array,
++  v: Float32Array,
++  dt: number,
++  solid: Uint8Array,
++) {
++  for (let y = 1; y < NY - 1; y += 1) {
++    for (let x = 1; x < NX - 1; x += 1) {
++      const i = idx(x, y);
++      if (solid[i]) {
++        dst[i] = src[i];
++        continue;
++      }
++      const backX = x - dt * u[i];
++      const backY = y - dt * v[i];
++      dst[i] = sample(src, backX, backY);
++    }
++  }
++}
++
++function diffuse(
++  dst: Float32Array,
++  src: Float32Array,
++  viscosity: number,
++  dt: number,
++  solid: Uint8Array,
++) {
++  dst.set(src);
++  const alpha = viscosity * dt * NX * NY;
++  const beta = 1 + 4 * alpha;
++  const scratch = new Float32Array(dst);
++
++  for (let pass = 0; pass < DIFFUSION_PASSES; pass += 1) {
++    for (let y = 1; y < NY - 1; y += 1) {
++      for (let x = 1; x < NX - 1; x += 1) {
++        const i = idx(x, y);
++        if (solid[i]) continue;
++        dst[i] =
++          (scratch[idx(x, y)] +
++            alpha *
++              (dst[idx(x - 1, y)] +
++                dst[idx(x + 1, y)] +
++                dst[idx(x, y - 1)] +
++                dst[idx(x, y + 1)])) /
++          beta;
++      }
++    }
++    scratch.set(dst);
++  }
++}
++
++function project(
++  u: Float32Array,
++  v: Float32Array,
++  pressure: Float32Array,
++  solid: Uint8Array,
++) {
++  const divergence = new Float32Array(NX * NY);
++  pressure.fill(0);
++
++  for (let y = 1; y < NY - 1; y += 1) {
++    for (let x = 1; x < NX - 1; x += 1) {
++      const i = idx(x, y);
++      if (solid[i]) continue;
++      divergence[i] = -0.5 *
++        (u[idx(x + 1, y)] - u[idx(x - 1, y)] + v[idx(x, y + 1)] - v[idx(x, y - 1)]);
++    }
++  }
++
++  for (let pass = 0; pass < SOLVER_PASSES; pass += 1) {
++    for (let y = 1; y < NY - 1; y += 1) {
++      for (let x = 1; x < NX - 1; x += 1) {
++        const i = idx(x, y);
++        if (solid[i]) continue;
++        pressure[i] =
++          (divergence[i] +
++            pressure[idx(x - 1, y)] +
++            pressure[idx(x + 1, y)] +
++            pressure[idx(x, y - 1)] +
++            pressure[idx(x, y + 1)]) /
++          4;
++      }
++    }
++  }
++
++  for (let y = 1; y < NY - 1; y += 1) {
++    for (let x = 1; x < NX - 1; x += 1) {
++      const i = idx(x, y);
++      if (solid[i]) continue;
++      u[i] -= 0.5 * (pressure[idx(x + 1, y)] - pressure[idx(x - 1, y)]);
++      v[i] -= 0.5 * (pressure[idx(x, y + 1)] - pressure[idx(x, y - 1)]);
++    }
++  }
++}
++
++function applyBoundaries(
++  u: Float32Array,
++  v: Float32Array,
++  solid: Uint8Array,
++  bodyU: number,
++  bodyV: number,
++) {
++  for (let y = 0; y < NY; y += 1) {
++    const left = idx(0, y);
++    const right = idx(NX - 1, y);
++    u[left] = FLOW_SPEED;
++    v[left] = 0;
++    u[right] = u[idx(NX - 2, y)];
++    v[right] = v[idx(NX - 2, y)];
++  }
++
++  for (let x = 0; x < NX; x += 1) {
++    u[idx(x, 0)] = u[idx(x, 1)];
++    v[idx(x, 0)] = 0;
++    u[idx(x, NY - 1)] = u[idx(x, NY - 2)];
++    v[idx(x, NY - 1)] = 0;
++  }
++
++  enforceSolid(u, v, solid, bodyU, bodyV);
++}
++
++function buildSolid(cx: number, cy: number, radius: number, solid: Uint8Array) {
++  solid.fill(0);
++  const r2 = radius * radius;
++  const minX = Math.max(1, Math.floor(cx - radius - 1));
++  const maxX = Math.min(NX - 2, Math.ceil(cx + radius + 1));
++  const minY = Math.max(1, Math.floor(cy - radius - 1));
++  const maxY = Math.min(NY - 2, Math.ceil(cy + radius + 1));
++
++  for (let y = minY; y <= maxY; y += 1) {
++    for (let x = minX; x <= maxX; x += 1) {
++      const dx = x - cx;
++      const dy = y - cy;
++      if (dx * dx + dy * dy <= r2) solid[idx(x, y)] = 1;
++    }
++  }
++}
++
++export function FlowSimulation({ active = true }: FlowSimulationProps) {
++  const canvasRef = useRef<HTMLCanvasElement>(null);
++  const activeRef = useRef(active);
++
++  useEffect(() => {
++    activeRef.current = active;
++  }, [active]);
++
++  useEffect(() => {
++    const canvas = canvasRef.current;
++    if (!canvas) return;
++
++    const context = canvas.getContext("2d", { alpha: true });
++    if (!context) return;
++
++    const u = new Float32Array(NX * NY);
++    const v = new Float32Array(NX * NY);
++    const uTmp = new Float32Array(NX * NY);
++    const vTmp = new Float32Array(NX * NY);
++    const uDiff = new Float32Array(NX * NY);
++    const vDiff = new Float32Array(NX * NY);
++    const pressure = new Float32Array(NX * NY);
++    const solid = new Uint8Array(NX * NY);
++    const particles = Array.from({ length: PARTICLE_COUNT }, (_, i) => ({
++      x: 3 + (i % 14) * 0.55,
++      y: 2 + ((i * 17) % (NY - 4)),
++    }));
++
++    resetField(u, v, pressure);
++
++    let width = 1;
++    let height = 1;
++    let dpr = 1;
++    let frame = 0;
++    let raf = 0;
++    let lastTime = performance.now();
++    let bodyX = NX * 0.48;
++    let bodyY = NY * 0.5;
++    let targetX = bodyX;
++    let targetY = bodyY;
++    let bodyVX = 0;
++    let bodyVY = 0;
++    let radius = 5.5;
++    let pointerInside = false;
++
++    const resize = () => {
++      const rect = canvas.getBoundingClientRect();
++      width = Math.max(1, rect.width);
++      height = Math.max(1, rect.height);
++      dpr = Math.min(window.devicePixelRatio || 1, 2);
++      canvas.width = Math.round(width * dpr);
++      canvas.height = Math.round(height * dpr);
++      context.setTransform(dpr, 0, 0, dpr, 0, 0);
++    };
++
++    const pointerMove = (event: PointerEvent) => {
++      const rect = canvas.getBoundingClientRect();
++      const x = ((event.clientX - rect.left) / rect.width) * NX;
++      const y = ((event.clientY - rect.top) / rect.height) * NY;
++      targetX = clamp(x, radius + 2, NX - radius - 2);
++      targetY = clamp(y, radius + 2, NY - radius - 2);
++      pointerInside = true;
++    };
++
++    const pointerLeave = () => {
++      pointerInside = false;
++      targetX = NX * 0.48;
++      targetY = NY * 0.5;
++    };
++
++    const step = () => {
++      const dx = targetX - bodyX;
++      const dy = targetY - bodyY;
++      bodyVX = dx * 0.16;
++      bodyVY = dy * 0.16;
++      bodyX += bodyVX;
++      bodyY += bodyVY;
++
++      buildSolid(bodyX, bodyY, radius, solid);
++
++      const dt = 0.55;
++      advect(uTmp, u, u, v, dt, solid);
++      advect(vTmp, v, u, v, dt, solid);
++      diffuse(uDiff, uTmp, VISCOSITY, dt, solid);
++      diffuse(vDiff, vTmp, VISCOSITY, dt, solid);
++      u.set(uDiff);
++      v.set(vDiff);
++      project(u, v, pressure, solid);
++      applyBoundaries(u, v, solid, bodyVX, bodyVY);
++
++      // A clean left-to-right inlet is reintroduced every step. This prevents
++      // accumulated numerical drift from turning the demo into recirculating flow.
++      for (let y = 1; y < NY - 1; y += 1) {
++        u[idx(1, y)] = FLOW_SPEED;
++        v[idx(1, y)] *= 0.15;
++      }
++    };
++
++    const draw = () => {
++      context.clearRect(0, 0, width, height);
++      context.save();
++
++      const sx = width / NX;
++      const sy = height / NY;
++      context.lineWidth = 1;
++      context.lineCap = "round";
++
++      // Low-cost streamline integration through the solved velocity field.
++      context.strokeStyle = "rgba(143, 163, 176, 0.34)";
++      const streamlineSeeds = 18;
++      for (let s = 0; s < streamlineSeeds; s += 1) {
++        const seedY = 2 + (s + 0.5) * ((NY - 4) / streamlineSeeds);
++        let x = 1.5;
++        let y = seedY;
++        context.beginPath();
++        context.moveTo(x * sx, y * sy);
++        for (let n = 0; n < 95; n += 1) {
++          const [vx, vy] = sampleVelocity(u, v, x, y);
++          const speed = Math.hypot(vx, vy) || 0.001;
++          x += (vx / speed) * 0.7;
++          y += (vy / speed) * 0.7;
++          if (x >= NX - 1 || y <= 1 || y >= NY - 1) break;
++          const ddx = x - bodyX;
++          const ddy = y - bodyY;
++          if (ddx * ddx + ddy * ddy < radius * radius) break;
++          context.lineTo(x * sx, y * sy);
++        }
++        context.stroke();
++      }
++
++      // Animated tracer particles make the left-to-right direction obvious.
++      context.fillStyle = "rgba(232, 234, 237, 0.72)";
++      for (const particle of particles) {
++        const [vx, vy] = sampleVelocity(u, v, particle.x, particle.y);
++        particle.x += vx * 0.85;
++        particle.y += vy * 0.85;
++        const dx = particle.x - bodyX;
++        const dy = particle.y - bodyY;
++        if (
++          particle.x > NX + 1 ||
++          particle.y < 1 ||
++          particle.y > NY - 1 ||
++          dx * dx + dy * dy < radius * radius
++        ) {
++          particle.x = 1 + Math.random() * 2;
++          particle.y = 2 + Math.random() * (NY - 4);
++        }
++        context.fillRect(particle.x * sx, particle.y * sy, 1.2, 1.2);
++      }
++
++      // Cylinder / object.
++      context.beginPath();
++      context.arc(bodyX * sx, bodyY * sy, radius * Math.min(sx, sy), 0, Math.PI * 2);
++      context.fillStyle = "rgba(7, 8, 9, 0.94)";
++      context.fill();
++      context.strokeStyle = pointerInside
++        ? "rgba(232, 234, 237, 0.9)"
++        : "rgba(143, 163, 176, 0.7)";
++      context.lineWidth = 1.2;
++      context.stroke();
++
++      // Subtle engineering-style direction indicator.
++      context.fillStyle = "rgba(122, 130, 140, 0.7)";
++      context.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
++      context.fillText("U∞ →", 12, 18);
++
++      context.restore();
++    };
++
++    const animate = (time: number) => {
++      const elapsed = Math.min(time - lastTime, 50);
++      lastTime = time;
++      if (activeRef.current) {
++        for (let i = 0; i < STEPS_PER_FRAME; i += 1) step();
++        frame += elapsed;
++        if (frame >= 0) draw();
++      } else {
++        draw();
++      }
++      raf = requestAnimationFrame(animate);
++    };
++
++    const resizeObserver = new ResizeObserver(resize);
++    resizeObserver.observe(canvas);
++    canvas.addEventListener("pointermove", pointerMove);
++    canvas.addEventListener("pointerenter", pointerMove);
++    canvas.addEventListener("pointerleave", pointerLeave);
++    resize();
++    raf = requestAnimationFrame(animate);
++
++    return () => {
++      cancelAnimationFrame(raf);
++      resizeObserver.disconnect();
++      canvas.removeEventListener("pointermove", pointerMove);
++      canvas.removeEventListener("pointerenter", pointerMove);
++      canvas.removeEventListener("pointerleave", pointerLeave);
++    };
++  }, []);
++
++  return (
++    <div className="mt-16 border-t border-[var(--border)] pt-8">
++      <div className="mb-4 flex items-end justify-between gap-4">
++        <div>
++          <p className="font-mono text-[10px] tracking-[0.24em] text-[var(--muted)] uppercase">
++            Interactive flow field
++          </p>
++          <p className="mt-2 text-sm text-[var(--muted-strong)]">
++            2D incompressible Navier–Stokes · move the body with your mouse
++          </p>
++        </div>
++        <span className="shrink-0 font-mono text-[10px] tracking-wider text-[var(--muted)]">
++          {NX} × {NY}
++        </span>
++      </div>
++      <div className="relative overflow-hidden rounded-sm border border-[var(--border)] bg-[var(--preview-bg)]">
++        <canvas
++          ref={canvasRef}
++          className="block h-[260px] w-full touch-none sm:h-[300px]"
++          aria-label="Interactive two-dimensional incompressible flow around a circular body"
++        />
++      </div>
++      <p className="mt-3 font-mono text-[10px] tracking-wide text-[var(--muted)]">
++        UNIFORM INLET → VISCOUS FLOW → MOVE THE BODY
++      </p>
++    </div>
++  );
++}

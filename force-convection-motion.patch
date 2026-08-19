@@ -1,0 +1,61 @@
+From 9a6abacf9dac88735203ffcc42d60817e3809045 Mon Sep 17 00:00:00 2001
+From: manishbazz <manishbazz@users.noreply.github.com>
+Date: Tue, 18 Aug 2026 06:10:55 +0000
+Subject: [PATCH] Force convection background to run regardless of
+ prefers-reduced-motion
+
+Removed the reduced-motion media query gating entirely (matchMedia
+check, change listener, start()'s reducedMotion guard) so the plume
+always animates, same treatment as the earlier preview-fade animation.
+---
+ src/components/panels/flow/createConvectionSim.ts | 13 +------------
+ 1 file changed, 1 insertion(+), 12 deletions(-)
+
+diff --git a/src/components/panels/flow/createConvectionSim.ts b/src/components/panels/flow/createConvectionSim.ts
+index 0af72d4..f96f999 100644
+--- a/src/components/panels/flow/createConvectionSim.ts
++++ b/src/components/panels/flow/createConvectionSim.ts
+@@ -302,7 +302,6 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
+   let raf = 0;
+   let running = false;
+   let last = performance.now();
+-  let reducedMotion = false;
+ 
+   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+ 
+@@ -505,7 +504,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
+   }
+ 
+   function start() {
+-    if (running || reducedMotion) return;
++    if (running) return;
+     running = true;
+     last = performance.now();
+     raf = requestAnimationFrame(render);
+@@ -521,15 +520,6 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
+     else start();
+   };
+ 
+-  const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+-  reducedMotion = motionQuery.matches;
+-  const onMotionChange = () => {
+-    reducedMotion = motionQuery.matches;
+-    if (reducedMotion) stop();
+-    else if (!document.hidden) start();
+-  };
+-  motionQuery.addEventListener("change", onMotionChange);
+-
+   resize();
+   applyBoundary();
+   project();
+@@ -546,7 +536,6 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
+       stop();
+       window.removeEventListener("resize", resize);
+       document.removeEventListener("visibilitychange", onVisibilityChange);
+-      motionQuery.removeEventListener("change", onMotionChange);
+       freeGrid();
+     },
+   };
+-- 
+2.43.0
+

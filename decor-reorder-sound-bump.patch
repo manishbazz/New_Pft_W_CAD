@@ -1,0 +1,238 @@
+From a84a5634ab82281f9ebd999ee6ba68797147781f Mon Sep 17 00:00:00 2001
+From: manishbazz <manishbazz@users.noreply.github.com>
+Date: Sun, 16 Aug 2026 20:06:10 +0000
+Subject: [PATCH] Double sound volumes, reorder About before Contact, fix decor
+ overlap, add decor to Home
+
+- All 5 sounds (hover/click/intro/scramble) doubled in volume
+- PANEL_IDS reordered: about now comes before contact
+- MechanicalDecor: dropped from 4 gears to 2 (opposite corners only,
+  pushed further off-canvas), equations moved to the untouched vertical
+  center band and enlarged (text-xl/2xl, higher opacity) so they're
+  actually legible and never overlap the gears
+- HomePanel: replaced the particle field with MechanicalDecor, matching
+  the About page's gears + CFD equations aesthetic
+- EntryGate's particle effect left untouched (different screen, only
+  the home page itself was in scope)
+---
+ src/components/PortfolioApp.tsx           | 26 +++++++--------
+ src/components/panels/HomePanel.tsx       | 21 +++++-------
+ src/components/panels/MechanicalDecor.tsx | 39 +++++++++++------------
+ src/lib/types.ts                          |  2 +-
+ src/lib/uiSound.ts                        | 10 +++---
+ 5 files changed, 45 insertions(+), 53 deletions(-)
+
+diff --git a/src/components/PortfolioApp.tsx b/src/components/PortfolioApp.tsx
+index 5e6f60b..8bcb248 100644
+--- a/src/components/PortfolioApp.tsx
++++ b/src/components/PortfolioApp.tsx
+@@ -289,19 +289,6 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
+             />
+           </section>
+ 
+-          <section
+-            data-panel="contact"
+-            aria-label="Contact"
+-            aria-hidden={active !== "contact"}
+-            className="h-full shrink-0 overflow-hidden"
+-            style={{ width: `${panelWidthPercent}%` }}
+-          >
+-            <ContactPanel
+-              contactEmail={content.site.contactEmail}
+-              active={active === "contact"}
+-            />
+-          </section>
+-
+           <section
+             data-panel="about"
+             aria-label="About"
+@@ -317,6 +304,19 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
+               active={active === "about"}
+             />
+           </section>
++
++          <section
++            data-panel="contact"
++            aria-label="Contact"
++            aria-hidden={active !== "contact"}
++            className="h-full shrink-0 overflow-hidden"
++            style={{ width: `${panelWidthPercent}%` }}
++          >
++            <ContactPanel
++              contactEmail={content.site.contactEmail}
++              active={active === "contact"}
++            />
++          </section>
+         </div>
+       </div>
+     </div>
+diff --git a/src/components/panels/HomePanel.tsx b/src/components/panels/HomePanel.tsx
+index e102b99..4a1e04d 100644
+--- a/src/components/panels/HomePanel.tsx
++++ b/src/components/panels/HomePanel.tsx
+@@ -1,9 +1,8 @@
+ "use client";
+ 
+-import { useRef } from "react";
+ import type { SiteContent } from "@/lib/types";
+-import { HomeParticles } from "@/components/panels/HomeParticles";
+ import { ScrambleText } from "@/components/ScrambleText";
++import { MechanicalDecor } from "@/components/panels/MechanicalDecor";
+ 
+ type HomePanelProps = {
+   site: SiteContent;
+@@ -11,24 +10,20 @@ type HomePanelProps = {
+ };
+ 
+ export function HomePanel({ site, active = true }: HomePanelProps) {
+-  const nameRef = useRef<HTMLDivElement>(null);
+-
+   return (
+     <div className="relative flex h-full w-full items-center justify-center px-6 pt-20">
+       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(90,120,140,0.12),transparent_55%),radial-gradient(ellipse_at_80%_80%,rgba(40,50,60,0.35),transparent_50%)]" />
+-      <HomeParticles boundsRef={nameRef} />
++      <MechanicalDecor />
+       <div className="relative max-w-3xl text-center">
+         <p className="mb-4 text-xs tracking-[0.35em] text-[var(--muted)] uppercase">
+           Portfolio
+         </p>
+-        <div ref={nameRef} className="inline-block">
+-          <ScrambleText
+-            as="h1"
+-            text={site.name}
+-            play={active}
+-            className="font-display text-3xl leading-relaxed tracking-wide text-[var(--text)] sm:text-4xl md:text-5xl"
+-          />
+-        </div>
++        <ScrambleText
++          as="h1"
++          text={site.name}
++          play={active}
++          className="font-display text-3xl leading-relaxed tracking-wide text-[var(--text)] sm:text-4xl md:text-5xl"
++        />
+         <p className="mt-6 text-lg text-[var(--muted)] sm:text-xl">
+           {site.designation}
+         </p>
+diff --git a/src/components/panels/MechanicalDecor.tsx b/src/components/panels/MechanicalDecor.tsx
+index 1abb1d7..197aa64 100644
+--- a/src/components/panels/MechanicalDecor.tsx
++++ b/src/components/panels/MechanicalDecor.tsx
+@@ -48,7 +48,12 @@ function Gear({ size, teeth = 10, className, style }: GearProps) {
+   );
+ }
+ 
+-/** Floating gears + faint CFD equations, purely decorative background texture. */
++/**
++ * Floating gears + CFD equations, purely decorative background texture.
++ * Gears stay pinned to two opposite corners (kept well apart from each
++ * other and clipped mostly off-canvas) so they never overlap; equations
++ * sit in the untouched vertical center band, clear of both corners.
++ */
+ export function MechanicalDecor() {
+   return (
+     <div
+@@ -56,32 +61,24 @@ export function MechanicalDecor() {
+       aria-hidden
+     >
+       <Gear
+-        size={180}
++        size={220}
+         teeth={12}
+-        className="animate-spin-slow absolute -top-10 -right-10 opacity-25"
++        className="animate-spin-slow absolute -top-16 -right-16 opacity-20"
+       />
+       <Gear
+-        size={110}
+-        teeth={8}
+-        className="animate-spin-slow-reverse absolute top-24 -right-2 opacity-20"
+-      />
+-      <Gear
+-        size={140}
++        size={170}
+         teeth={10}
+-        className="animate-spin-slow-reverse absolute -bottom-8 -left-10 opacity-20"
+-      />
+-      <Gear
+-        size={70}
+-        teeth={8}
+-        className="animate-spin-slow absolute bottom-32 left-16 opacity-15"
++        className="animate-spin-slow-reverse absolute -bottom-14 -left-14 opacity-20"
+       />
+ 
+-      <p className="absolute top-1/3 left-1/2 hidden -translate-x-1/2 rotate-[-6deg] font-mono text-sm tracking-wide text-[var(--border)] opacity-30 sm:block">
+-        ∂u/∂t + (u·∇)u = −∇p/ρ + ν∇²u
+-      </p>
+-      <p className="absolute bottom-20 left-1/2 hidden -translate-x-1/2 rotate-[4deg] font-mono text-xs tracking-wide text-[var(--border)] opacity-25 sm:block">
+-        ∇·u = 0
+-      </p>
++      <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-4 px-4">
++        <p className="rotate-[-3deg] text-center font-mono text-xl tracking-wide text-[var(--border)] opacity-45 sm:text-2xl">
++          ∂u/∂t + (u·∇)u = −∇p/ρ + ν∇²u
++        </p>
++        <p className="rotate-[2deg] text-center font-mono text-lg tracking-wide text-[var(--border)] opacity-40 sm:text-xl">
++          ∇·u = 0
++        </p>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/lib/types.ts b/src/lib/types.ts
+index df641ee..84b2605 100644
+--- a/src/lib/types.ts
++++ b/src/lib/types.ts
+@@ -55,8 +55,8 @@ export const PANEL_IDS = [
+   "home",
+   "projects",
+   "experience",
+-  "contact",
+   "about",
++  "contact",
+ ] as const;
+ export type PanelId = (typeof PANEL_IDS)[number];
+ 
+diff --git a/src/lib/uiSound.ts b/src/lib/uiSound.ts
+index 978caef..9c6b284 100644
+--- a/src/lib/uiSound.ts
++++ b/src/lib/uiSound.ts
+@@ -34,7 +34,7 @@ export function unlockAudio() {
+ export function playHoverTick() {
+   loadZzfx()?.then(({ zzfx }) => {
+     // volume, randomness, frequency, attack, sustain, release, shape(triangle)
+-    zzfx(0.25, 0, 1300, 0, 0.006, 0.03, 1, 1.2, 0, 0, 0, 0, 0, 0.02);
++    zzfx(0.5, 0, 1300, 0, 0.006, 0.03, 1, 1.2, 0, 0, 0, 0, 0, 0.02);
+   });
+ }
+ 
+@@ -43,7 +43,7 @@ export function playClickTick() {
+   loadZzfx()?.then(({ zzfx }) => {
+     // volume, randomness, freq, attack, sustain, release, shape(saw),
+     // shapeCurve, slide(descending), ..., noise, ..., sustainVolume, decay
+-    zzfx(0.22, 0.05, 340, 0, 0.02, 0.13, 2, 1.1, -28, 0, 0, 0, 0, 0.08, 0, 0, 0, 0.8, 0.05);
++    zzfx(0.44, 0.05, 340, 0, 0.02, 0.13, 2, 1.1, -28, 0, 0, 0, 0, 0.08, 0, 0, 0, 0.8, 0.05);
+   });
+ }
+ 
+@@ -51,10 +51,10 @@ export function playClickTick() {
+ export function playIntroChime() {
+   loadZzfx()?.then(({ zzfx }) => {
+     // Bass swell — low sine, long attack/sustain/release.
+-    zzfx(0.55, 0, 62, 0.15, 0.5, 0.55, 0, 1, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0.9, 0.25);
++    zzfx(1.1, 0, 62, 0.15, 0.5, 0.55, 0, 1, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0.9, 0.25);
+     // Shimmer, arriving a beat later.
+     window.setTimeout(() => {
+-      zzfx(0.28, 0, 260, 0.05, 0.3, 0.55, 1, 1, 55, 0, 0, 0, 0, 0, 0, 0, 0, 0.7, 0.1);
++      zzfx(0.56, 0, 260, 0.05, 0.3, 0.55, 1, 1, 55, 0, 0, 0, 0, 0, 0, 0, 0, 0.7, 0.1);
+     }, 480);
+   });
+ }
+@@ -63,6 +63,6 @@ export function playIntroChime() {
+ export function playScrambleTick() {
+   loadZzfx()?.then(({ zzfx }) => {
+     const freq = 900 + Math.random() * 500;
+-    zzfx(0.14, 0, freq, 0, 0.004, 0.012, 1, 1, 0, 0, 0, 0, 0, 0);
++    zzfx(0.28, 0, freq, 0, 0.004, 0.012, 1, 1, 0, 0, 0, 0, 0, 0);
+   });
+ }
+-- 
+2.43.0
+

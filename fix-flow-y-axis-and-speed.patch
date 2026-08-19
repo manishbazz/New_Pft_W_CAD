@@ -1,0 +1,54 @@
+From 4af573b7ab141f1d20760aa72da589d42b9a0869 Mon Sep 17 00:00:00 2001
+From: manishbazz <manishbazz@users.noreply.github.com>
+Date: Tue, 18 Aug 2026 06:08:46 +0000
+Subject: [PATCH] Apply missing Y-axis flip and resolution/speed bump to
+ flagship flow sim
+
+These were described in an earlier discussion but never actually
+committed to createGpuFlowSim.ts:
+- targetFracY now flips (1 - fraction) to correct the WebGL clip-space
+  Y inversion vs real mouse coordinates
+- BASE_NY 64->120, MIN_NX 80->140, MAX_NX 220->340,
+  PROJECT_ITERATIONS 30->40, BASE_TIME_SCALE 35->55
+---
+ src/components/panels/flow/createGpuFlowSim.ts | 16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/src/components/panels/flow/createGpuFlowSim.ts b/src/components/panels/flow/createGpuFlowSim.ts
+index 124e32e..1ddd79a 100644
+--- a/src/components/panels/flow/createGpuFlowSim.ts
++++ b/src/components/panels/flow/createGpuFlowSim.ts
+@@ -12,12 +12,12 @@ import type { FlowController } from "./types";
+  * getContext('webgl2') on `canvas` here permanently commits it to WebGL.
+  */
+ 
+-const BASE_NY = 64;
+-const MIN_NX = 80;
+-const MAX_NX = 220;
+-const PROJECT_ITERATIONS = 30;
++const BASE_NY = 120;
++const MIN_NX = 140;
++const MAX_NX = 340;
++const PROJECT_ITERATIONS = 40;
+ 
+-const BASE_TIME_SCALE = 35;
++const BASE_TIME_SCALE = 55;
+ const MAX_SUBSTEP_DT = 0.16;
+ const DYE_SPEED_MULTIPLIER = 1.5;
+ 
+@@ -599,7 +599,11 @@ export function createGpuFlowSim(
+     const marginX = (bodyRadiusGrid + 2) / NX;
+     const marginY = (bodyRadiusGrid + 2) / NY;
+     targetFracX = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), marginX, 1 - marginX);
+-    targetFracY = clamp((event.clientY - rect.top) / Math.max(rect.height, 1), marginY, 1 - marginY);
++    targetFracY = clamp(
++      1 - (event.clientY - rect.top) / Math.max(rect.height, 1),
++      marginY,
++      1 - marginY,
++    );
+     hovering = true;
+   };
+   const onPointerLeave = () => {
+-- 
+2.43.0
+
