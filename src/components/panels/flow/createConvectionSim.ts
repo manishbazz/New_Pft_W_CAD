@@ -245,11 +245,26 @@ void main() {
 
 export function createConvectionSim(canvas: HTMLCanvasElement): FlowController | null {
   const gl = canvas.getContext("webgl2", { alpha: true, premultipliedAlpha: false });
-  if (!gl) return null;
-  if (!gl.getExtension("EXT_color_buffer_float")) return null;
+  if (!gl) {
+    console.warn("[convection-sim] WebGL2 context unavailable — smoke bg disabled.");
+    return null;
+  }
+  if (!gl.getExtension("EXT_color_buffer_float")) {
+    console.warn("[convection-sim] EXT_color_buffer_float unsupported — smoke bg disabled.");
+    return null;
+  }
 
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  // No blending anywhere in this pipeline: every pass (sim + final render)
+  // is a fullscreen quad that fully overwrites its target each frame, so
+  // there's nothing to blend with. Leaving BLEND enabled here previously
+  // caused the final render-to-canvas draw to get pre-multiplied by alpha
+  // on the way in (via SRC_ALPHA blending against a transparent-cleared
+  // canvas), while the context is configured with premultipliedAlpha:
+  // false — so the browser multiplied by alpha a SECOND time when
+  // compositing onto the page, making the smoke fade as alpha^3 instead
+  // of alpha. Near-invisible in practice. Blending is simply unnecessary
+  // here, so it stays off.
+  gl.disable(gl.BLEND);
 
   const quadBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
@@ -271,6 +286,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   const renderProg = createGLProgram(gl, RENDER_FRAG, ["uTemp", "uVel", "uTexel"], VERT_SRC);
 
   if (!boundaryProg || !buoyancyProg || !advectVelProg || !divergenceProg || !jacobiProg || !gradientProg || !advectTempProg || !renderProg) {
+    console.warn("[convection-sim] one or more shader programs failed to compile/link — smoke bg disabled.");
     return null;
   }
 
