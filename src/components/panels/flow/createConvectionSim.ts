@@ -29,9 +29,12 @@ import type { FlowController } from "./types";
  * floor sits at gridPos.y = 0; the open "chimney" outflow is at
  * gridPos.y = NY.
  *
- * RENDER: grayscale isotherm contour (stepped bands + thin fwidth-based
- * lines at each band edge) rather than a color gradient — deliberately
- * reads as an engineering contour plot instead of a "flame".
+ * RENDER: plain white smoke (alpha follows temperature — cold is fully
+ * transparent, hot is opaque white) instead of a color gradient, with a
+ * velocity-weighted blur: the render pass takes a few extra taps of the
+ * temperature field along the local flow direction, spread further apart
+ * where the flow is faster, so fast-moving smoke smears while still
+ * smoke stays sharp — rather than a single fixed blur radius everywhere.
  *
  * GPU-only: no CPU fallback. This is a decorative, always-on background,
  * and a JS for-loop version running continuously behind page content is a
@@ -52,7 +55,6 @@ const MAX_SUBSTEP_DT = 0.16;
 const BUOYANCY = 3.2;
 const AMBIENT_TEMP = 0.0;
 const SOURCE_TEMP = 1.0;
-const CONTOUR_LEVELS = 9;
 
 const VERT_SRC = `#version 300 es
 in vec2 aPos;
@@ -210,25 +212,35 @@ precision highp float;
 in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uTemp;
+uniform sampler2D uVel;
+uniform vec2 uTexel;
 
-const float LEVELS = ${CONTOUR_LEVELS.toFixed(1)};
+const int SAMPLES = 5;
 
 void main() {
-  float t = clamp(texture(uTemp, vUv).r, 0.0, 1.0);
+  vec2 vel = texture(uVel, vUv).xy;
+  float speed = length(vel);
 
-  // Grayscale isotherm contour on a dark page background: brightness
-  // tracks temperature directly (hot -> near-white, cold -> fully
-  // transparent), with a thin dark line traced at each band boundary
-  // for a contour-plot read. Standard fwidth-based line technique:
-  // distance to the nearest boundary, measured in screen-pixel units,
-  // so the line only darkens right at the edge instead of everywhere.
-  float v = t * LEVELS;
-  float distToLine = abs(fract(v - 0.5) - 0.5) / max(fwidth(v), 1e-4);
-  float line = 1.0 - clamp(distToLine, 0.0, 1.0);
+  // Motion blur strength scales with local flow speed — still smoke
+  // stays sharp, fast-moving smoke smears along its direction of
+  // travel. No fixed/uniform blur radius.
+  vec2 dir = speed > 0.0001 ? vel / speed : vec2(0.0, 1.0);
+  float blurAmount = clamp(speed * 0.5, 0.0, 5.0);
 
-  float gray = clamp(t - line * 0.3, 0.0, 1.0);
-  float alpha = smoothstep(0.02, 0.85, t) * 0.85;
-  outColor = vec4(vec3(gray), alpha);
+  float t = 0.0;
+  float wSum = 0.0;
+  for (int i = 0; i < SAMPLES; i++) {
+    float f = (float(i) / float(SAMPLES - 1)) - 0.5; // -0.5 .. 0.5
+    vec2 uv = vUv + dir * f * blurAmount * uTexel;
+    float w = 1.0 - abs(f) * 0.8;
+    t += clamp(texture(uTemp, uv).r, 0.0, 1.0) * w;
+    wSum += w;
+  }
+  t = clamp(t / wSum, 0.0, 1.0);
+
+  // Cold -> transparent (page background shows through). Hot -> white smoke.
+  float alpha = smoothstep(0.03, 0.9, t) * 0.8;
+  outColor = vec4(vec3(1.0), alpha);
 }`;
 
 export function createConvectionSim(canvas: HTMLCanvasElement): FlowController | null {
@@ -256,7 +268,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   const jacobiProg = createGLProgram(gl, JACOBI_FRAG, ["uPressure", "uDivergence", "uTexel"], VERT_SRC);
   const gradientProg = createGLProgram(gl, GRADIENT_SUBTRACT_FRAG, ["uVel", "uPressure", "uTexel"], VERT_SRC);
   const advectTempProg = createGLProgram(gl, ADVECT_TEMP_FRAG, ["uTemp", "uVel", "uTexel", "uGridSize", "uDt", "uSourceTemp"], VERT_SRC);
-  const renderProg = createGLProgram(gl, RENDER_FRAG, ["uTemp"], VERT_SRC);
+  const renderProg = createGLProgram(gl, RENDER_FRAG, ["uTemp", "uVel", "uTexel"], VERT_SRC);
 
   if (!boundaryProg || !buoyancyProg || !advectVelProg || !divergenceProg || !jacobiProg || !gradientProg || !advectTempProg || !renderProg) {
     return null;
@@ -405,7 +417,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   }
 
   function drawFrame() {
-    if (!temperature) return;
+    if (!temperature || !velocity) return;
     gl!.clearColor(0, 0, 0, 0);
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, null);
     gl!.viewport(0, 0, canvas.width, canvas.height);
@@ -414,7 +426,10 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     const { uniforms } = renderProg!;
     runPass(renderProg!, null, () => {
       bindTex(0, temperature!.read.texture);
+      bindTex(1, velocity!.read.texture);
       gl!.uniform1i(uniforms.uTemp, 0);
+      gl!.uniform1i(uniforms.uVel, 1);
+      gl!.uniform2f(uniforms.uTexel, 1 / NX, 1 / NY);
     });
   }
 
