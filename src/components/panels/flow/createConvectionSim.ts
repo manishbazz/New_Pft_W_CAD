@@ -44,6 +44,21 @@ import type { FlowController } from "./types";
  * GPU-only: no CPU fallback. This is a decorative, always-on background,
  * and a JS for-loop version running continuously behind page content is a
  * much worse trade than simply not rendering it on unsupported browsers.
+ *
+ * OPTIONAL OBSTACLE: a single click-and-drag square solid, off by default
+ * (see setObstacle() on the returned controller / uObstacleHalfSizeGrid
+ * below — half-size <= 0 means "no obstacle", which every isSolid() check
+ * short-circuits on). It's a Chebyshev-distance ("square") test against
+ * uObstacleCenterGrid, following the same isSolid-per-pass pattern as the
+ * circular obstacle in createGpuFlowSim.ts: BOUNDARY, ADVECT_VEL,
+ * DIVERGENCE, JACOBI and GRADIENT_SUBTRACT all zero/hold velocity and
+ * pressure inside it so the plume actually deflects around it instead of
+ * passing straight through. ADVECT_TEMP pins the obstacle's interior back
+ * to ambient temperature every frame — the diffuse passes below don't
+ * individually re-clamp it (this is a soft decorative element, not a
+ * strict solver), so a frame's worth of thermal diffusion can bleed a
+ * sliver of heat in, but the next advect pass wipes it before it
+ * accumulates into anything visible.
  */
 
 // Deliberately coarse — this is a soft, ambient background element, not
@@ -98,6 +113,12 @@ out vec4 outColor;
 uniform sampler2D uVel;
 uniform vec2 uTexel;
 uniform vec2 uGridSize;
+uniform vec2 uObstacleCenterGrid;
+uniform float uObstacleHalfSizeGrid;
+bool isSolid(vec2 g) {
+  vec2 d = abs(g - uObstacleCenterGrid);
+  return uObstacleHalfSizeGrid > 0.0 && max(d.x, d.y) < uObstacleHalfSizeGrid;
+}
 void main() {
   vec2 gridPos = vUv * uGridSize;
   vec2 vel = texture(uVel, vUv).xy;
@@ -113,6 +134,9 @@ void main() {
   // gridPos.y ~ NY is the physical TOP — open chimney, zero-gradient.
   if (gridPos.y > uGridSize.y - 1.0) {
     vel = texture(uVel, vUv - vec2(0.0, uTexel.y)).xy;
+  }
+  if (isSolid(gridPos)) {
+    vel = vec2(0.0);
   }
   outColor = vec4(vel, 0.0, 1.0);
 }`;
@@ -144,6 +168,12 @@ uniform vec2 uTexel;
 uniform vec2 uGridSize;
 uniform float uDt;
 uniform float uDamping;
+uniform vec2 uObstacleCenterGrid;
+uniform float uObstacleHalfSizeGrid;
+bool isSolid(vec2 g) {
+  vec2 d = abs(g - uObstacleCenterGrid);
+  return uObstacleHalfSizeGrid > 0.0 && max(d.x, d.y) < uObstacleHalfSizeGrid;
+}
 void main() {
   vec2 gridPos = vUv * uGridSize;
   vec2 vel = texture(uVel, vUv).xy;
@@ -155,6 +185,7 @@ void main() {
   if (gridPos.y > uGridSize.y - 1.0) {
     newVel = texture(uVel, vUv - vec2(0.0, uTexel.y)).xy;
   }
+  if (isSolid(gridPos)) newVel = vec2(0.0);
   // Small multiplicative decay, once per substep — a safety net against
   // unbounded velocity growth independent of pressure-solve convergence.
   newVel *= uDamping;
@@ -167,7 +198,19 @@ in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uVel;
 uniform vec2 uTexel;
+uniform vec2 uGridSize;
+uniform vec2 uObstacleCenterGrid;
+uniform float uObstacleHalfSizeGrid;
+bool isSolid(vec2 g) {
+  vec2 d = abs(g - uObstacleCenterGrid);
+  return uObstacleHalfSizeGrid > 0.0 && max(d.x, d.y) < uObstacleHalfSizeGrid;
+}
 void main() {
+  vec2 gridPos = vUv * uGridSize;
+  if (isSolid(gridPos)) {
+    outColor = vec4(0.0);
+    return;
+  }
   float L = texture(uVel, vUv - vec2(uTexel.x, 0.0)).x;
   float R = texture(uVel, vUv + vec2(uTexel.x, 0.0)).x;
   float B = texture(uVel, vUv - vec2(0.0, uTexel.y)).y;
@@ -183,13 +226,27 @@ out vec4 outColor;
 uniform sampler2D uPressure;
 uniform sampler2D uDivergence;
 uniform vec2 uTexel;
+uniform vec2 uGridSize;
+uniform vec2 uObstacleCenterGrid;
+uniform float uObstacleHalfSizeGrid;
+bool isSolid(vec2 g) {
+  vec2 d = abs(g - uObstacleCenterGrid);
+  return uObstacleHalfSizeGrid > 0.0 && max(d.x, d.y) < uObstacleHalfSizeGrid;
+}
+float pAt(vec2 uv, float selfP) {
+  vec2 g = uv * uGridSize;
+  if (isSolid(g)) return selfP;
+  return texture(uPressure, uv).r;
+}
 void main() {
+  vec2 gridPos = vUv * uGridSize;
+  if (isSolid(gridPos)) { outColor = vec4(0.0); return; }
   float self = texture(uPressure, vUv).r;
   float div = texture(uDivergence, vUv).r;
-  float L = texture(uPressure, vUv - vec2(uTexel.x, 0.0)).r;
-  float R = texture(uPressure, vUv + vec2(uTexel.x, 0.0)).r;
-  float B = texture(uPressure, vUv - vec2(0.0, uTexel.y)).r;
-  float T = texture(uPressure, vUv + vec2(0.0, uTexel.y)).r;
+  float L = pAt(vUv - vec2(uTexel.x, 0.0), self);
+  float R = pAt(vUv + vec2(uTexel.x, 0.0), self);
+  float B = pAt(vUv - vec2(0.0, uTexel.y), self);
+  float T = pAt(vUv + vec2(0.0, uTexel.y), self);
   outColor = vec4((div + L + R + B + T) * 0.25, 0.0, 0.0, 1.0);
 }`;
 
@@ -200,12 +257,27 @@ out vec4 outColor;
 uniform sampler2D uVel;
 uniform sampler2D uPressure;
 uniform vec2 uTexel;
+uniform vec2 uGridSize;
+uniform vec2 uObstacleCenterGrid;
+uniform float uObstacleHalfSizeGrid;
+bool isSolid(vec2 g) {
+  vec2 d = abs(g - uObstacleCenterGrid);
+  return uObstacleHalfSizeGrid > 0.0 && max(d.x, d.y) < uObstacleHalfSizeGrid;
+}
+float pAt(vec2 uv, float selfP) {
+  vec2 g = uv * uGridSize;
+  if (isSolid(g)) return selfP;
+  return texture(uPressure, uv).r;
+}
 void main() {
+  vec2 gridPos = vUv * uGridSize;
+  if (isSolid(gridPos)) { outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
   vec2 vel = texture(uVel, vUv).xy;
-  float L = texture(uPressure, vUv - vec2(uTexel.x, 0.0)).r;
-  float R = texture(uPressure, vUv + vec2(uTexel.x, 0.0)).r;
-  float B = texture(uPressure, vUv - vec2(0.0, uTexel.y)).r;
-  float T = texture(uPressure, vUv + vec2(0.0, uTexel.y)).r;
+  float self = texture(uPressure, vUv).r;
+  float L = pAt(vUv - vec2(uTexel.x, 0.0), self);
+  float R = pAt(vUv + vec2(uTexel.x, 0.0), self);
+  float B = pAt(vUv - vec2(0.0, uTexel.y), self);
+  float T = pAt(vUv + vec2(0.0, uTexel.y), self);
   vel.x -= 0.5 * (R - L);
   vel.y -= 0.5 * (T - B);
   outColor = vec4(vel, 0.0, 1.0);
@@ -221,6 +293,12 @@ uniform vec2 uTexel;
 uniform vec2 uGridSize;
 uniform float uDt;
 uniform float uSourceTemp;
+uniform vec2 uObstacleCenterGrid;
+uniform float uObstacleHalfSizeGrid;
+bool isSolid(vec2 g) {
+  vec2 d = abs(g - uObstacleCenterGrid);
+  return uObstacleHalfSizeGrid > 0.0 && max(d.x, d.y) < uObstacleHalfSizeGrid;
+}
 void main() {
   vec2 gridPos = vUv * uGridSize;
   vec2 vel = texture(uVel, vUv).xy;
@@ -233,6 +311,11 @@ void main() {
   if (gridPos.y < 1.0) {
     t = uSourceTemp;
   } else if (gridPos.x < 1.0 || gridPos.x > uGridSize.x - 1.0) {
+    t = 0.0;
+  }
+  // The obstacle is treated as a cool solid: pin its interior back to
+  // ambient every frame (see file header re: diffuse-pass bleed).
+  if (isSolid(gridPos)) {
     t = 0.0;
   }
   outColor = vec4(t, 0.0, 0.0, 1.0);
@@ -295,6 +378,9 @@ precision highp float;
 in vec2 vUv;
 out vec4 outColor;
 uniform sampler2D uVel;
+uniform vec2 uGridSize;
+uniform vec2 uObstacleCenterGrid;
+uniform float uObstacleHalfSizeGrid;
 
 // Reference speed the contour scale is normalized against — tuned to the
 // plume's typical peak speed at BUOYANCY = ${BUOYANCY}. Raise it if the
@@ -325,6 +411,23 @@ void main() {
   // Still air -> transparent (page background shows through).
   // Moving air -> visible, capped so it stays a background element.
   float alpha = smoothstep(0.015, 0.2, s) * 0.55;
+
+  // Draggable obstacle: drawn on top regardless of local speed, since it
+  // needs to stay visible sitting in otherwise-still air. A soft fill
+  // plus a slightly brighter 1px-ish edge line, in the same grayscale
+  // palette as the contour so it reads as part of the same plot.
+  if (uObstacleHalfSizeGrid > 0.0) {
+    vec2 gridPos = vUv * uGridSize;
+    vec2 d = abs(gridPos - uObstacleCenterGrid);
+    float box = max(d.x, d.y) - uObstacleHalfSizeGrid;
+    float fill = 1.0 - smoothstep(-0.5, 0.5, box);
+    float outline = (1.0 - smoothstep(0.0, 0.7, abs(box))) * 0.9;
+    if (fill > 0.0 || outline > 0.0) {
+      col = mix(col, vec3(0.72), max(fill * 0.5, outline));
+      alpha = max(alpha, max(fill * 0.35, outline * 0.6));
+    }
+  }
+
   outColor = vec4(col, alpha);
 }`;
 
@@ -361,17 +464,17 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     gl!.vertexAttribPointer(loc, 2, gl!.FLOAT, false, 0, 0);
   }
 
-  const boundaryProg = createGLProgram(gl, BOUNDARY_FRAG, ["uVel", "uTexel", "uGridSize"], VERT_SRC);
+  const boundaryProg = createGLProgram(gl, BOUNDARY_FRAG, ["uVel", "uTexel", "uGridSize", "uObstacleCenterGrid", "uObstacleHalfSizeGrid"], VERT_SRC);
   const buoyancyProg = createGLProgram(gl, BUOYANCY_FRAG, ["uVel", "uTemp", "uDt", "uBuoyancy", "uAmbientTemp"], VERT_SRC);
-  const advectVelProg = createGLProgram(gl, ADVECT_VEL_FRAG, ["uVel", "uTexel", "uGridSize", "uDt", "uDamping"], VERT_SRC);
-  const divergenceProg = createGLProgram(gl, DIVERGENCE_FRAG, ["uVel", "uTexel"], VERT_SRC);
-  const jacobiProg = createGLProgram(gl, JACOBI_FRAG, ["uPressure", "uDivergence", "uTexel"], VERT_SRC);
-  const gradientProg = createGLProgram(gl, GRADIENT_SUBTRACT_FRAG, ["uVel", "uPressure", "uTexel"], VERT_SRC);
-  const advectTempProg = createGLProgram(gl, ADVECT_TEMP_FRAG, ["uTemp", "uVel", "uTexel", "uGridSize", "uDt", "uSourceTemp"], VERT_SRC);
+  const advectVelProg = createGLProgram(gl, ADVECT_VEL_FRAG, ["uVel", "uTexel", "uGridSize", "uDt", "uDamping", "uObstacleCenterGrid", "uObstacleHalfSizeGrid"], VERT_SRC);
+  const divergenceProg = createGLProgram(gl, DIVERGENCE_FRAG, ["uVel", "uTexel", "uGridSize", "uObstacleCenterGrid", "uObstacleHalfSizeGrid"], VERT_SRC);
+  const jacobiProg = createGLProgram(gl, JACOBI_FRAG, ["uPressure", "uDivergence", "uTexel", "uGridSize", "uObstacleCenterGrid", "uObstacleHalfSizeGrid"], VERT_SRC);
+  const gradientProg = createGLProgram(gl, GRADIENT_SUBTRACT_FRAG, ["uVel", "uPressure", "uTexel", "uGridSize", "uObstacleCenterGrid", "uObstacleHalfSizeGrid"], VERT_SRC);
+  const advectTempProg = createGLProgram(gl, ADVECT_TEMP_FRAG, ["uTemp", "uVel", "uTexel", "uGridSize", "uDt", "uSourceTemp", "uObstacleCenterGrid", "uObstacleHalfSizeGrid"], VERT_SRC);
   const copyProg = createGLProgram(gl, COPY_FRAG, ["uSrc"], VERT_SRC);
   const diffuseVelProg = createGLProgram(gl, DIFFUSE_VEL_FRAG, ["uVel", "uVel0", "uTexel", "uAlpha", "uInvBeta"], VERT_SRC);
   const diffuseTempProg = createGLProgram(gl, DIFFUSE_TEMP_FRAG, ["uTemp", "uTemp0", "uTexel", "uAlpha", "uInvBeta"], VERT_SRC);
-  const renderProg = createGLProgram(gl, RENDER_FRAG, ["uVel"], VERT_SRC);
+  const renderProg = createGLProgram(gl, RENDER_FRAG, ["uVel", "uGridSize", "uObstacleCenterGrid", "uObstacleHalfSizeGrid"], VERT_SRC);
 
   if (
     !boundaryProg || !buoyancyProg || !advectVelProg || !divergenceProg ||
@@ -399,8 +502,41 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   let running = false;
   let last = performance.now();
 
+  // Obstacle: off by default (halfSizeGrid <= 0 disables every isSolid()
+  // check above). fracX/fracY are DOM viewport fractions (0..1, y-down)
+  // set via setObstacle(); converted to grid space (y-up, see file header)
+  // fresh each frame so it stays correct across resizes.
+  let obstacleEnabled = false;
+  let obstacleFracX = 0.5;
+  let obstacleFracY = 0.5;
 
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+
+  function obstacleHalfSizeGrid() {
+    if (!obstacleEnabled) return 0;
+    return Math.max(3, Math.min(NX, NY) * 0.1);
+  }
+
+  function obstacleUniforms(u: Record<string, WebGLUniformLocation | null>) {
+    const halfSize = obstacleHalfSizeGrid();
+    const marginX = halfSize / Math.max(NX, 1);
+    const marginY = halfSize / Math.max(NY, 1);
+    const cx = clamp(obstacleFracX, marginX, 1 - marginX) * NX;
+    // DOM y is down; grid y is up (see coordinate-convention note above).
+    const cy = (1 - clamp(obstacleFracY, marginY, 1 - marginY)) * NY;
+    gl!.uniform2f(u.uObstacleCenterGrid, cx, cy);
+    gl!.uniform1f(u.uObstacleHalfSizeGrid, halfSize);
+  }
+
+  function setObstacle(xFrac: number | null, yFrac: number | null) {
+    if (xFrac == null || yFrac == null) {
+      obstacleEnabled = false;
+      return;
+    }
+    obstacleEnabled = true;
+    obstacleFracX = clamp(xFrac, 0, 1);
+    obstacleFracY = clamp(yFrac, 0, 1);
+  }
 
   function freeGrid() {
     deleteGLDoubleTarget(gl!, velocity);
@@ -447,6 +583,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
       gl!.uniform1i(uniforms.uVel, 0);
       gl!.uniform2f(uniforms.uTexel, 1 / NX, 1 / NY);
       gl!.uniform2f(uniforms.uGridSize, NX, NY);
+      obstacleUniforms(uniforms);
     });
     velocity.swap();
   }
@@ -473,6 +610,8 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
       bindTex(0, velocity!.read.texture);
       gl!.uniform1i(dUniforms.uVel, 0);
       gl!.uniform2f(dUniforms.uTexel, 1 / NX, 1 / NY);
+      gl!.uniform2f(dUniforms.uGridSize, NX, NY);
+      obstacleUniforms(dUniforms);
     });
 
     gl!.bindFramebuffer(gl!.FRAMEBUFFER, pressure.read.fbo);
@@ -488,6 +627,8 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
         gl!.uniform1i(jUniforms.uPressure, 0);
         gl!.uniform1i(jUniforms.uDivergence, 1);
         gl!.uniform2f(jUniforms.uTexel, 1 / NX, 1 / NY);
+        gl!.uniform2f(jUniforms.uGridSize, NX, NY);
+        obstacleUniforms(jUniforms);
       });
       pressure.swap();
     }
@@ -499,6 +640,8 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
       gl!.uniform1i(gUniforms.uVel, 0);
       gl!.uniform1i(gUniforms.uPressure, 1);
       gl!.uniform2f(gUniforms.uTexel, 1 / NX, 1 / NY);
+      gl!.uniform2f(gUniforms.uGridSize, NX, NY);
+      obstacleUniforms(gUniforms);
     });
     velocity.swap();
   }
@@ -513,6 +656,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
       gl!.uniform2f(uniforms.uGridSize, NX, NY);
       gl!.uniform1f(uniforms.uDt, dt);
       gl!.uniform1f(uniforms.uDamping, VELOCITY_DAMPING);
+      obstacleUniforms(uniforms);
     });
     velocity.swap();
   }
@@ -529,6 +673,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
       gl!.uniform2f(uniforms.uGridSize, NX, NY);
       gl!.uniform1f(uniforms.uDt, dt);
       gl!.uniform1f(uniforms.uSourceTemp, SOURCE_TEMP);
+      obstacleUniforms(uniforms);
     });
     temperature.swap();
   }
@@ -592,6 +737,8 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     runPass(renderProg!, null, () => {
       bindTex(0, velocity!.read.texture);
       gl!.uniform1i(uniforms.uVel, 0);
+      gl!.uniform2f(uniforms.uGridSize, NX, NY);
+      obstacleUniforms(uniforms);
     });
   }
 
@@ -684,6 +831,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   return {
     start,
     stop,
+    setObstacle,
     destroy() {
       stop();
       window.removeEventListener("resize", resize);
