@@ -52,12 +52,12 @@ import type { FlowController } from "./types";
 const BASE_NY = 48;
 const MIN_NX = 48;
 const MAX_NX = 140;
-const PROJECT_ITERATIONS = 28;
+const PROJECT_ITERATIONS = 50;
 
-const BASE_TIME_SCALE = 30;
-const MAX_SUBSTEP_DT = 0.16;
+const BASE_TIME_SCALE = 18;
+const MAX_SUBSTEP_DT = 0.1;
 
-const BUOYANCY = 3.2;
+const BUOYANCY = 2.0;
 const AMBIENT_TEMP = 0.0;
 const SOURCE_TEMP = 1.0;
 
@@ -67,11 +67,21 @@ const SOURCE_TEMP = 1.0;
 // the heated floor so plumes have to overcome drag to detach, instead of
 // accelerating into one continuous sheet. THERMAL_DIFFUSIVITY softens
 // the temperature field's edges the same way. Both act on grid units
-// (dx = 1, matching the rest of this solver), so keep these small —
-// values much above ~0.1 will visibly slow and blur the whole plume.
-const VISCOSITY = 0.03;
-const THERMAL_DIFFUSIVITY = 0.02;
+// (dx = 1, matching the rest of this solver). These need to be large
+// enough to meaningfully bleed off momentum — buoyancy never turns off,
+// so weak diffusion here is what lets velocity build past what a FIXED
+// (not convergence-checked) PROJECT_ITERATIONS count can still fully
+// project each frame, which is what causes the smooth-then-chaotic blowup.
+const VISCOSITY = 0.4;
+const THERMAL_DIFFUSIVITY = 0.15;
 const DIFFUSE_ITERATIONS = 20;
+
+// Extra safety net independent of how well the pressure solve converges:
+// a small multiplicative velocity decay applied once per substep (see
+// ADVECT_VEL_FRAG). Invisible on slow, smooth flow, but guarantees
+// velocity can't grow unbounded even if PROJECT_ITERATIONS ever falls
+// short again.
+const VELOCITY_DAMPING = 0.99;
 
 const VERT_SRC = `#version 300 es
 in vec2 aPos;
@@ -133,6 +143,7 @@ uniform sampler2D uVel;
 uniform vec2 uTexel;
 uniform vec2 uGridSize;
 uniform float uDt;
+uniform float uDamping;
 void main() {
   vec2 gridPos = vUv * uGridSize;
   vec2 vel = texture(uVel, vUv).xy;
@@ -144,6 +155,9 @@ void main() {
   if (gridPos.y > uGridSize.y - 1.0) {
     newVel = texture(uVel, vUv - vec2(0.0, uTexel.y)).xy;
   }
+  // Small multiplicative decay, once per substep — a safety net against
+  // unbounded velocity growth independent of pressure-solve convergence.
+  newVel *= uDamping;
   outColor = vec4(newVel, 0.0, 1.0);
 }`;
 
@@ -349,7 +363,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
 
   const boundaryProg = createGLProgram(gl, BOUNDARY_FRAG, ["uVel", "uTexel", "uGridSize"], VERT_SRC);
   const buoyancyProg = createGLProgram(gl, BUOYANCY_FRAG, ["uVel", "uTemp", "uDt", "uBuoyancy", "uAmbientTemp"], VERT_SRC);
-  const advectVelProg = createGLProgram(gl, ADVECT_VEL_FRAG, ["uVel", "uTexel", "uGridSize", "uDt"], VERT_SRC);
+  const advectVelProg = createGLProgram(gl, ADVECT_VEL_FRAG, ["uVel", "uTexel", "uGridSize", "uDt", "uDamping"], VERT_SRC);
   const divergenceProg = createGLProgram(gl, DIVERGENCE_FRAG, ["uVel", "uTexel"], VERT_SRC);
   const jacobiProg = createGLProgram(gl, JACOBI_FRAG, ["uPressure", "uDivergence", "uTexel"], VERT_SRC);
   const gradientProg = createGLProgram(gl, GRADIENT_SUBTRACT_FRAG, ["uVel", "uPressure", "uTexel"], VERT_SRC);
@@ -498,6 +512,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
       gl!.uniform2f(uniforms.uTexel, 1 / NX, 1 / NY);
       gl!.uniform2f(uniforms.uGridSize, NX, NY);
       gl!.uniform1f(uniforms.uDt, dt);
+      gl!.uniform1f(uniforms.uDamping, VELOCITY_DAMPING);
     });
     velocity.swap();
   }
