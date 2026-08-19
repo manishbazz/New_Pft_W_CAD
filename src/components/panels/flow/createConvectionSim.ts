@@ -216,18 +216,18 @@ const float LEVELS = ${CONTOUR_LEVELS.toFixed(1)};
 void main() {
   float t = clamp(texture(uTemp, vUv).r, 0.0, 1.0);
 
-  // Grayscale isotherm contour: stepped bands with a thin dark line at
-  // each band boundary (fwidth-based, so lines stay crisp at any scale)
-  // instead of a smooth color gradient.
+  // Grayscale isotherm contour on a dark page background: brightness
+  // tracks temperature directly (hot -> near-white, cold -> fully
+  // transparent), with a thin dark line traced at each band boundary
+  // for a contour-plot read. Standard fwidth-based line technique:
+  // distance to the nearest boundary, measured in screen-pixel units,
+  // so the line only darkens right at the edge instead of everywhere.
   float v = t * LEVELS;
-  float band = floor(v) / LEVELS;
-  float gray = mix(t, band, 0.5);
+  float distToLine = abs(fract(v - 0.5) - 0.5) / max(fwidth(v), 1e-4);
+  float line = 1.0 - clamp(distToLine, 0.0, 1.0);
 
-  float d = fract(v) / max(fwidth(v), 1e-4);
-  float line = 1.0 - clamp(min(d, 1.0 - d + 1.0), 0.0, 1.0);
-  gray *= 1.0 - line * 0.55;
-
-  float alpha = smoothstep(0.03, 0.9, t) * 0.8;
+  float gray = clamp(t - line * 0.3, 0.0, 1.0);
+  float alpha = smoothstep(0.02, 0.85, t) * 0.85;
   outColor = vec4(vec3(gray), alpha);
 }`;
 
