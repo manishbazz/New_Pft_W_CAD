@@ -241,7 +241,7 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
 
       {active === "home" && <HomeConvectionBackground />}
 
-      <div className="h-full w-full overflow-hidden">
+      <div className="relative z-10 h-full w-full overflow-hidden">
         <div
           className="flex h-full transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform"
           style={{
