@@ -18,8 +18,12 @@ import type { FlowController } from "./types";
  * an otherwise-quiescent domain. No obstacle, no pointer tracking — heat
  * injection happens directly in the temperature boundary condition
  * (see ADVECT_TEMP_FRAG). Same Stable Fluids projection method
- * underneath, plus one extra pass: buoyancy force proportional to
- * (T - T_ambient), applied to velocity before each projection.
+ * underneath, plus two extra passes: buoyancy force proportional to
+ * (T - T_ambient), applied to velocity before each projection; and an
+ * implicit diffuse step (viscosity on velocity, thermal diffusivity on
+ * temperature) — the classic middle step of Stam's
+ * forces->diffuse->project->advect pipeline. See diffuseVelocity /
+ * diffuseTemperature below.
  *
  * COORDINATE CONVENTION (read this before touching boundary conditions):
  * gridPos = vUv * uGridSize renders, on the default framebuffer, with
@@ -56,6 +60,18 @@ const MAX_SUBSTEP_DT = 0.16;
 const BUOYANCY = 3.2;
 const AMBIENT_TEMP = 0.0;
 const SOURCE_TEMP = 1.0;
+
+// Implicit diffusion (Stam's "diffuse" step — same Jacobi-relaxation
+// pattern as the pressure solve below, just a different stencil weight).
+// VISCOSITY damps momentum: it's what lets a boundary layer build up at
+// the heated floor so plumes have to overcome drag to detach, instead of
+// accelerating into one continuous sheet. THERMAL_DIFFUSIVITY softens
+// the temperature field's edges the same way. Both act on grid units
+// (dx = 1, matching the rest of this solver), so keep these small —
+// values much above ~0.1 will visibly slow and blur the whole plume.
+const VISCOSITY = 0.03;
+const THERMAL_DIFFUSIVITY = 0.02;
+const DIFFUSE_ITERATIONS = 20;
 
 const VERT_SRC = `#version 300 es
 in vec2 aPos;
@@ -208,6 +224,58 @@ void main() {
   outColor = vec4(t, 0.0, 0.0, 1.0);
 }`;
 
+const COPY_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uSrc;
+void main() { outColor = texture(uSrc, vUv); }`;
+
+// Implicit diffusion, solved by Jacobi relaxation — structurally the same
+// as JACOBI_FRAG above, but relaxing toward a fixed "pre-diffusion"
+// source (uVel0) each iteration instead of a divergence field. uAlpha =
+// diffusionRate * dt, uInvBeta = 1 / (1 + 4 * uAlpha). Vector version for
+// velocity/momentum diffusion (viscosity).
+const DIFFUSE_VEL_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uVel;
+uniform sampler2D uVel0;
+uniform vec2 uTexel;
+uniform float uAlpha;
+uniform float uInvBeta;
+void main() {
+  vec2 self0 = texture(uVel0, vUv).xy;
+  vec2 L = texture(uVel, vUv - vec2(uTexel.x, 0.0)).xy;
+  vec2 R = texture(uVel, vUv + vec2(uTexel.x, 0.0)).xy;
+  vec2 B = texture(uVel, vUv - vec2(0.0, uTexel.y)).xy;
+  vec2 T = texture(uVel, vUv + vec2(0.0, uTexel.y)).xy;
+  vec2 result = (self0 + uAlpha * (L + R + B + T)) * uInvBeta;
+  outColor = vec4(result, 0.0, 1.0);
+}`;
+
+// Same implicit diffusion, scalar version for temperature (thermal
+// diffusivity).
+const DIFFUSE_TEMP_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uTemp;
+uniform sampler2D uTemp0;
+uniform vec2 uTexel;
+uniform float uAlpha;
+uniform float uInvBeta;
+void main() {
+  float self0 = texture(uTemp0, vUv).r;
+  float L = texture(uTemp, vUv - vec2(uTexel.x, 0.0)).r;
+  float R = texture(uTemp, vUv + vec2(uTexel.x, 0.0)).r;
+  float B = texture(uTemp, vUv - vec2(0.0, uTexel.y)).r;
+  float T = texture(uTemp, vUv + vec2(0.0, uTexel.y)).r;
+  float result = (self0 + uAlpha * (L + R + B + T)) * uInvBeta;
+  outColor = vec4(result, 0.0, 0.0, 1.0);
+}`;
+
 const RENDER_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -286,9 +354,16 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   const jacobiProg = createGLProgram(gl, JACOBI_FRAG, ["uPressure", "uDivergence", "uTexel"], VERT_SRC);
   const gradientProg = createGLProgram(gl, GRADIENT_SUBTRACT_FRAG, ["uVel", "uPressure", "uTexel"], VERT_SRC);
   const advectTempProg = createGLProgram(gl, ADVECT_TEMP_FRAG, ["uTemp", "uVel", "uTexel", "uGridSize", "uDt", "uSourceTemp"], VERT_SRC);
+  const copyProg = createGLProgram(gl, COPY_FRAG, ["uSrc"], VERT_SRC);
+  const diffuseVelProg = createGLProgram(gl, DIFFUSE_VEL_FRAG, ["uVel", "uVel0", "uTexel", "uAlpha", "uInvBeta"], VERT_SRC);
+  const diffuseTempProg = createGLProgram(gl, DIFFUSE_TEMP_FRAG, ["uTemp", "uTemp0", "uTexel", "uAlpha", "uInvBeta"], VERT_SRC);
   const renderProg = createGLProgram(gl, RENDER_FRAG, ["uVel"], VERT_SRC);
 
-  if (!boundaryProg || !buoyancyProg || !advectVelProg || !divergenceProg || !jacobiProg || !gradientProg || !advectTempProg || !renderProg) {
+  if (
+    !boundaryProg || !buoyancyProg || !advectVelProg || !divergenceProg ||
+    !jacobiProg || !gradientProg || !advectTempProg || !copyProg ||
+    !diffuseVelProg || !diffuseTempProg || !renderProg
+  ) {
     console.warn("[convection-sim] one or more shader programs failed to compile/link — smoke bg disabled.");
     return null;
   }
@@ -300,6 +375,8 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   let pressure: GLDoubleTarget | null = null;
   let divergence: GLTarget | null = null;
   let temperature: GLDoubleTarget | null = null;
+  let velocity0: GLTarget | null = null;
+  let temperature0: GLTarget | null = null;
 
   let width = 0;
   let height = 0;
@@ -316,6 +393,8 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     deleteGLDoubleTarget(gl!, pressure);
     deleteGLTarget(gl!, divergence);
     deleteGLDoubleTarget(gl!, temperature);
+    deleteGLTarget(gl!, velocity0);
+    deleteGLTarget(gl!, temperature0);
   }
 
   function allocateGrid(nx: number, ny: number) {
@@ -326,6 +405,10 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     pressure = createGLDoubleTarget(gl!, NX, NY, gl!.R16F, gl!.RED);
     divergence = createGLTarget(gl!, NX, NY, gl!.R16F, gl!.RED);
     temperature = createGLDoubleTarget(gl!, NX, NY, gl!.R16F, gl!.RED);
+    // Fixed "pre-diffusion" snapshots the implicit diffuse solve relaxes
+    // toward each Jacobi iteration (see diffuseVelocity/diffuseTemperature).
+    velocity0 = createGLTarget(gl!, NX, NY, gl!.RG16F, gl!.RG);
+    temperature0 = createGLTarget(gl!, NX, NY, gl!.R16F, gl!.RED);
   }
 
   function runPass(prog: GLProgram, target: GLTarget | null, setup: () => void) {
@@ -435,6 +518,54 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     temperature.swap();
   }
 
+  function diffuseVelocity(dt: number) {
+    if (!velocity || !velocity0) return;
+    // Snapshot the current field as the fixed RHS the Jacobi loop relaxes
+    // toward (same role divergence plays for the pressure solve).
+    runPass(copyProg!, velocity0, () => {
+      bindTex(0, velocity!.read.texture);
+      gl!.uniform1i(copyProg!.uniforms.uSrc, 0);
+    });
+    const alpha = VISCOSITY * dt;
+    const invBeta = 1 / (1 + 4 * alpha);
+    const { uniforms } = diffuseVelProg!;
+    for (let i = 0; i < DIFFUSE_ITERATIONS; i++) {
+      runPass(diffuseVelProg!, velocity.write, () => {
+        bindTex(0, velocity!.read.texture);
+        bindTex(1, velocity0!.texture);
+        gl!.uniform1i(uniforms.uVel, 0);
+        gl!.uniform1i(uniforms.uVel0, 1);
+        gl!.uniform2f(uniforms.uTexel, 1 / NX, 1 / NY);
+        gl!.uniform1f(uniforms.uAlpha, alpha);
+        gl!.uniform1f(uniforms.uInvBeta, invBeta);
+      });
+      velocity.swap();
+    }
+  }
+
+  function diffuseTemperature(dt: number) {
+    if (!temperature || !temperature0) return;
+    runPass(copyProg!, temperature0, () => {
+      bindTex(0, temperature!.read.texture);
+      gl!.uniform1i(copyProg!.uniforms.uSrc, 0);
+    });
+    const alpha = THERMAL_DIFFUSIVITY * dt;
+    const invBeta = 1 / (1 + 4 * alpha);
+    const { uniforms } = diffuseTempProg!;
+    for (let i = 0; i < DIFFUSE_ITERATIONS; i++) {
+      runPass(diffuseTempProg!, temperature.write, () => {
+        bindTex(0, temperature!.read.texture);
+        bindTex(1, temperature0!.texture);
+        gl!.uniform1i(uniforms.uTemp, 0);
+        gl!.uniform1i(uniforms.uTemp0, 1);
+        gl!.uniform2f(uniforms.uTexel, 1 / NX, 1 / NY);
+        gl!.uniform1f(uniforms.uAlpha, alpha);
+        gl!.uniform1f(uniforms.uInvBeta, invBeta);
+      });
+      temperature.swap();
+    }
+  }
+
   function drawFrame() {
     if (!temperature || !velocity) return;
     gl!.clearColor(0, 0, 0, 0);
@@ -462,8 +593,15 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     project();
     applyBoundary();
     advectVelocity(dt);
+    // Diffuse (viscosity) right after advection, same spot Stam's vel_step
+    // uses it — then re-enforce walls/floor before the final project(),
+    // since the Jacobi relaxation above has no notion of boundaries and
+    // will happily diffuse velocity into the floor/walls.
+    diffuseVelocity(dt);
+    applyBoundary();
     project();
     advectTemperature(dt);
+    diffuseTemperature(dt);
   }
 
   function resize() {
