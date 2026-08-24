@@ -15,7 +15,12 @@ import type { FlowController } from "./types";
 const BASE_NY = 64;
 const MIN_NX = 80;
 const MAX_NX = 220;
-const PROJECT_ITERATIONS = 40;
+// Kept equal to createCpuFlowSim.ts's PROJECT_ITERATIONS. Jacobi iteration
+// on the pressure solve acts as a low-pass smoother on the velocity field;
+// running it further than the CPU backend was quietly smoothing out the
+// residual asymmetry that seeds von Kármán vortex shedding behind the
+// obstacle, so the GPU backend looked steady where the CPU one shed.
+const PROJECT_ITERATIONS = 30;
 
 const BASE_TIME_SCALE = 35;
 const MAX_SUBSTEP_DT = 0.16;
@@ -51,7 +56,12 @@ void main() {
     vel = texture(uVel, vUv - vec2(uTexel.x, 0.0)).xy;
   }
   if (gridPos.y < 1.0 || gridPos.y > uGridSize.y - 1.0) {
-    vel.y = 0.0;
+    // Match createCpuFlowSim.ts: reset to full free-stream velocity, not
+    // just zero the wall-normal component. This keeps the shear layer
+    // between the free-stream and the wake continuously refreshed, which
+    // is what drives shedding — zeroing only vel.y left the tangential
+    // component free to decay, weakening that shear and damping shedding.
+    vel = vec2(1.0, 0.0);
   }
   if (distance(gridPos, uObstacleCenterGrid) < uObstacleRadiusGrid) {
     vel = vec2(0.0);
@@ -81,7 +91,7 @@ void main() {
     newVel = texture(uVel, vUv - vec2(uTexel.x, 0.0)).xy;
   }
   if (gridPos.y < 1.0 || gridPos.y > uGridSize.y - 1.0) {
-    newVel.y = 0.0;
+    newVel = vec2(1.0, 0.0);
   }
   if (distance(gridPos, uObstacleCenterGrid) < uObstacleRadiusGrid) {
     newVel = vec2(0.0);
