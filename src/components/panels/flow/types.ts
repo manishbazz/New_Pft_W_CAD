@@ -12,4 +12,10 @@ export type FlowController = {
    * the home-page convection background), so callers must optional-chain.
    */
   setObstacle?: (xFrac: number | null, yFrac: number | null) => void;
+  /**
+   * Optional: choose the draggable obstacle's shape. Only meaningful
+   * alongside setObstacle — not every backend implements this, so callers
+   * must optional-chain.
+   */
+  setObstacleShape?: (shape: "square" | "circle" | "triangle") => void;
 };

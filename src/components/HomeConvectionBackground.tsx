@@ -10,8 +10,8 @@ import type { FlowController } from "./panels/flow/types";
  * unsupported browsers or when the user prefers reduced motion, rather
  * than falling back to a CPU simulation running full-screen.
  *
- * Optional disturbance: an "Add obstacle" toggle drops a square solid
- * into the plume that can be click-and-dragged around.
+ * Optional disturbance: an "Add obstacle" toggle drops a solid (square,
+ * circle, or triangle) into the plume that can be click-and-dragged around.
  *
  * The canvas itself is always pointer-events: none — it's just a render
  * target, sitting at z-0 behind the actual panel content. That panel
@@ -30,6 +30,9 @@ export function HomeConvectionBackground() {
   const controllerRef = useRef<FlowController | null>(null);
   const draggingRef = useRef(false);
   const [obstacleOn, setObstacleOn] = useState(false);
+  const [obstacleShape, setObstacleShapeState] = useState<
+    "square" | "circle" | "triangle"
+  >("square");
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -45,14 +48,21 @@ export function HomeConvectionBackground() {
   }, []);
 
   useEffect(() => {
-    const overlay = overlayRef.current;
-    if (!overlay) return;
-
+    // Check obstacleOn BEFORE touching overlayRef: the overlay div is only
+    // rendered while obstacleOn is true (see JSX below), so on the toggle
+    // that turns it off, overlayRef.current is already null by the time
+    // this effect re-runs. Reading the ref first and bailing on `!overlay`
+    // used to skip the setObstacle(null, null) call entirely, leaving the
+    // obstacle enabled (visible, deflecting the flow) with nothing left to
+    // drag it with.
     if (!obstacleOn) {
       controllerRef.current?.setObstacle?.(null, null);
       draggingRef.current = false;
       return;
     }
+
+    const overlay = overlayRef.current;
+    if (!overlay) return;
 
     const setFromEvent = (event: PointerEvent) => {
       const rect = overlay.getBoundingClientRect();
@@ -79,6 +89,7 @@ export function HomeConvectionBackground() {
 
     // Drop it in the middle of the viewport as soon as obstacle mode is
     // switched on, so there's something to see/grab immediately.
+    controllerRef.current?.setObstacleShape?.(obstacleShape);
     controllerRef.current?.setObstacle?.(0.5, 0.5);
 
     overlay.addEventListener("pointerdown", onPointerDown);
@@ -94,6 +105,13 @@ export function HomeConvectionBackground() {
     };
   }, [obstacleOn]);
 
+  // Re-push the shape whenever it changes while obstacle mode is already
+  // on, without tearing down/re-adding the drag listeners above.
+  useEffect(() => {
+    if (!obstacleOn) return;
+    controllerRef.current?.setObstacleShape?.(obstacleShape);
+  }, [obstacleOn, obstacleShape]);
+
   return (
     <>
       <canvas
@@ -108,6 +126,31 @@ export function HomeConvectionBackground() {
           className="fixed inset-0 z-40 h-screen w-screen touch-none cursor-grab active:cursor-grabbing"
         />
       )}
+      {obstacleOn && (
+        <div
+          aria-hidden="false"
+          role="group"
+          aria-label="Obstacle shape"
+          className="fixed right-6 bottom-20 z-50 flex gap-2"
+        >
+          {(["square", "circle", "triangle"] as const).map((shape) => (
+            <button
+              key={shape}
+              type="button"
+              onClick={() => setObstacleShapeState(shape)}
+              aria-pressed={obstacleShape === shape}
+              title={shape}
+              className={`flex h-9 w-9 items-center justify-center rounded-full border backdrop-blur transition-colors ${
+                obstacleShape === shape
+                  ? "border-[var(--foreground)] bg-[rgba(7,8,9,0.85)] text-[var(--foreground)]"
+                  : "border-[var(--border)] bg-[rgba(7,8,9,0.7)] text-[var(--muted)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              <ShapeIcon shape={shape} />
+            </button>
+          ))}
+        </div>
+      )}
       <button
         type="button"
         onClick={() => setObstacleOn((prev) => !prev)}
@@ -117,5 +160,19 @@ export function HomeConvectionBackground() {
         {obstacleOn ? "Remove obstacle" : "Add obstacle"}
       </button>
     </>
+  );
+}
+
+function ShapeIcon({ shape }: { shape: "square" | "circle" | "triangle" }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      {shape === "square" && (
+        <rect x="2" y="2" width="12" height="12" fill="currentColor" />
+      )}
+      {shape === "circle" && <circle cx="8" cy="8" r="6" fill="currentColor" />}
+      {shape === "triangle" && (
+        <polygon points="8,2 14,14 2,14" fill="currentColor" />
+      )}
+    </svg>
   );
 }
