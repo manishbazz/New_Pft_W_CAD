@@ -51,7 +51,7 @@ import type { FlowController } from "./types";
  * short-circuits on). Shape is square, circle, or triangle (setObstacleShape()
  * / uObstacleShape — see isSolid() in each pass below), following the same
  * isSolid-per-pass pattern as the circular obstacle in createGpuFlowSim.ts: BOUNDARY, ADVECT_VEL,
- * DIVERGENCE, JACOBI and GRADIENT_SUBTRACT all zero/hold velocity and
+ * DIVERGENCE, RB_SOR and GRADIENT_SUBTRACT all zero/hold velocity and
  * pressure inside it so the plume actually deflects around it instead of
  * passing straight through. ADVECT_TEMP pins the obstacle's interior back
  * to ambient temperature every frame — the diffuse passes below don't
@@ -67,7 +67,13 @@ import type { FlowController } from "./types";
 const BASE_NY = 48;
 const MIN_NX = 48;
 const MAX_NX = 140;
+// Pressure solve: red-black SOR, one colour per GPU pass (so 50 passes =
+// 25 full sweeps, the same GPU cost as the old 50 Jacobi passes). See the
+// SOR_OMEGA note in createGpuFlowSim.ts for the measured error reduction
+// vs Jacobi at the same pass count. The diffuse passes below stay Jacobi:
+// that system is strongly diagonally dominant and already converges fast.
 const PROJECT_ITERATIONS = 50;
+const SOR_OMEGA = 1.8;
 
 const BASE_TIME_SCALE = 18;
 const MAX_SUBSTEP_DT = 0.1;
@@ -76,7 +82,7 @@ const BUOYANCY = 2.0;
 const AMBIENT_TEMP = 0.0;
 const SOURCE_TEMP = 1.0;
 
-// Implicit diffusion (Stam's "diffuse" step — same Jacobi-relaxation
+// Implicit diffusion (Stam's "diffuse" step — Jacobi relaxation, the same
 // pattern as the pressure solve below, just a different stencil weight).
 // VISCOSITY damps momentum: it's what lets a boundary layer build up at
 // the heated floor so plumes have to overcome drag to detach, instead of
@@ -282,7 +288,7 @@ void main() {
   outColor = vec4(d, 0.0, 0.0, 1.0);
 }`;
 
-const JACOBI_FRAG = `#version 300 es
+const RB_SOR_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outColor;
@@ -290,6 +296,8 @@ uniform sampler2D uPressure;
 uniform sampler2D uDivergence;
 uniform vec2 uTexel;
 uniform vec2 uGridSize;
+uniform int uColor;
+uniform float uOmega;
 uniform vec2 uObstacleCenterGrid;
 uniform float uObstacleHalfSizeGrid;
 uniform float uObstacleShape;
@@ -326,12 +334,20 @@ void main() {
   vec2 gridPos = vUv * uGridSize;
   if (isSolid(gridPos)) { outColor = vec4(0.0); return; }
   float self = texture(uPressure, vUv).r;
+  // Red-black ordering: only cells of the current colour update this
+  // pass; the other colour copies through unchanged. A 5-point stencil
+  // never couples two cells of the same colour, so every cell of the
+  // active colour can update at once and still see its neighbours'
+  // newest values (Gauss-Seidel), then over-relax by uOmega (SOR).
+  ivec2 cell = ivec2(gl_FragCoord.xy);
+  if (((cell.x + cell.y) & 1) != uColor) { outColor = vec4(self, 0.0, 0.0, 1.0); return; }
   float div = texture(uDivergence, vUv).r;
   float L = pAt(vUv - vec2(uTexel.x, 0.0), self);
   float R = pAt(vUv + vec2(uTexel.x, 0.0), self);
   float B = pAt(vUv - vec2(0.0, uTexel.y), self);
   float T = pAt(vUv + vec2(0.0, uTexel.y), self);
-  outColor = vec4((div + L + R + B + T) * 0.25, 0.0, 0.0, 1.0);
+  float gs = (div + L + R + B + T) * 0.25;
+  outColor = vec4(self + uOmega * (gs - self), 0.0, 0.0, 1.0);
 }`;
 
 const GRADIENT_SUBTRACT_FRAG = `#version 300 es
@@ -455,7 +471,7 @@ uniform sampler2D uSrc;
 void main() { outColor = texture(uSrc, vUv); }`;
 
 // Implicit diffusion, solved by Jacobi relaxation — structurally the same
-// as JACOBI_FRAG above, but relaxing toward a fixed "pre-diffusion"
+// as the pressure relaxation (RB_SOR_FRAG) above, but relaxing toward a fixed "pre-diffusion"
 // source (uVel0) each iteration instead of a divergence field. uAlpha =
 // diffusionRate * dt, uInvBeta = 1 / (1 + 4 * uAlpha). Vector version for
 // velocity/momentum diffusion (viscosity).
@@ -614,7 +630,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   const buoyancyProg = createGLProgram(gl, BUOYANCY_FRAG, ["uVel", "uTemp", "uDt", "uBuoyancy", "uAmbientTemp"], VERT_SRC);
   const advectVelProg = createGLProgram(gl, ADVECT_VEL_FRAG, ["uVel", "uTexel", "uGridSize", "uDt", "uDamping", "uObstacleCenterGrid", "uObstacleHalfSizeGrid", "uObstacleShape"], VERT_SRC);
   const divergenceProg = createGLProgram(gl, DIVERGENCE_FRAG, ["uVel", "uTexel", "uGridSize", "uObstacleCenterGrid", "uObstacleHalfSizeGrid", "uObstacleShape"], VERT_SRC);
-  const jacobiProg = createGLProgram(gl, JACOBI_FRAG, ["uPressure", "uDivergence", "uTexel", "uGridSize", "uObstacleCenterGrid", "uObstacleHalfSizeGrid", "uObstacleShape"], VERT_SRC);
+  const sorProg = createGLProgram(gl, RB_SOR_FRAG, ["uPressure", "uDivergence", "uTexel", "uGridSize", "uColor", "uOmega", "uObstacleCenterGrid", "uObstacleHalfSizeGrid", "uObstacleShape"], VERT_SRC);
   const gradientProg = createGLProgram(gl, GRADIENT_SUBTRACT_FRAG, ["uVel", "uPressure", "uTexel", "uGridSize", "uObstacleCenterGrid", "uObstacleHalfSizeGrid", "uObstacleShape"], VERT_SRC);
   const advectTempProg = createGLProgram(gl, ADVECT_TEMP_FRAG, ["uTemp", "uVel", "uTexel", "uGridSize", "uDt", "uSourceTemp", "uObstacleCenterGrid", "uObstacleHalfSizeGrid", "uObstacleShape"], VERT_SRC);
   const copyProg = createGLProgram(gl, COPY_FRAG, ["uSrc"], VERT_SRC);
@@ -624,7 +640,7 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
 
   if (
     !boundaryProg || !buoyancyProg || !advectVelProg || !divergenceProg ||
-    !jacobiProg || !gradientProg || !advectTempProg || !copyProg ||
+    !sorProg || !gradientProg || !advectTempProg || !copyProg ||
     !diffuseVelProg || !diffuseTempProg || !renderProg
   ) {
     console.warn("[convection-sim] one or more shader programs failed to compile/link — smoke bg disabled.");
@@ -773,15 +789,17 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     gl!.clearColor(0, 0, 0, 1);
     gl!.clear(gl!.COLOR_BUFFER_BIT);
 
-    const jUniforms = jacobiProg!.uniforms;
+    const jUniforms = sorProg!.uniforms;
     for (let i = 0; i < PROJECT_ITERATIONS; i++) {
-      runPass(jacobiProg!, pressure.write, () => {
+      runPass(sorProg!, pressure.write, () => {
         bindTex(0, pressure!.read.texture);
         bindTex(1, divergence!.texture);
         gl!.uniform1i(jUniforms.uPressure, 0);
         gl!.uniform1i(jUniforms.uDivergence, 1);
         gl!.uniform2f(jUniforms.uTexel, 1 / NX, 1 / NY);
         gl!.uniform2f(jUniforms.uGridSize, NX, NY);
+        gl!.uniform1i(jUniforms.uColor, i & 1);
+        gl!.uniform1f(jUniforms.uOmega, SOR_OMEGA);
         obstacleUniforms(jUniforms);
       });
       pressure.swap();

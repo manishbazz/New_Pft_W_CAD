@@ -11,7 +11,10 @@ import type { FlowController } from "./types";
 const BASE_NY = 64;
 const MIN_NX = 80;
 const MAX_NX = 220;
+// Passes of red-black SOR (one colour per pass); kept equal to
+// createGpuFlowSim.ts. See SOR_OMEGA there for how omega was chosen.
 const PROJECT_ITERATIONS = 30;
+const SOR_OMEGA = 1.8;
 const U_INF = 1.0;
 
 const BASE_TIME_SCALE = 35;
@@ -217,9 +220,14 @@ export function createCpuFlowSim(
       }
     }
 
+    // Red-black SOR, one colour per pass: the same algorithm, ordering and
+    // pass count as the GPU backend's RB_SOR_FRAG, so both backends
+    // produce the same flow. (The previous in-place lexicographic loop was
+    // Gauss-Seidel while the GPU ran Jacobi, so the two never matched.)
     for (let k = 0; k < iterations; k++) {
+      const color = k & 1;
       for (let y = 1; y < NY - 1; y++) {
-        for (let x = 1; x < NX - 1; x++) {
+        for (let x = 1 + ((y + 1 + color) & 1); x < NX - 1; x += 2) {
           const i = idx(x, y);
           if (solid[i]) {
             p[i] = 0;
@@ -229,7 +237,8 @@ export function createCpuFlowSim(
           const pr = neighborPressure(x + 1, y, p[i]);
           const pd = neighborPressure(x, y - 1, p[i]);
           const puN = neighborPressure(x, y + 1, p[i]);
-          p[i] = (div[i] + pl + pr + pd + puN) * 0.25;
+          const gs = (div[i] + pl + pr + pd + puN) * 0.25;
+          p[i] += SOR_OMEGA * (gs - p[i]);
         }
       }
       setScalarBoundary(p);
