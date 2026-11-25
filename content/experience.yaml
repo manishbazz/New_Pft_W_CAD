@@ -1,38 +1,50 @@
 experience:
+  - id: electrowaves
+    role: Mechanical Engineer
+    company: Electrowaves Electronics
+    location: Parwanoo, India
+    start: "Jan 2025"
+    end: Present
+    bullets:
+      - Designed the cam-and-chain drive of a high-reach railway pantograph for constant contact force — cam profile synthesised from an energy balance and verified by an independent forward simulation (7 ± 0.05 kgf predicted over 0.15–3.6 m at one supply pressure).
+      - Investigated a structural failure in the pantograph's lever-pivot arm with load-path analysis and FEA; redesigned the drive to cut peak arm moment by 20 % and chain load by 24 %, and specified the reinforcements.
+      - Run thermal CFD simulations on power-electronic products to guide design decisions and reduce cost, backed by hand calculations.
+      - Design and fabricate mechanical products from concept and CAD to manufacturing drawings.
+
   - id: menthosa-solutions
-    role: Mechanical Design Engineer
+    role: Mechanical Engineer, Design Department
     company: Menthosa Solutions
     location: Chandigarh, India
     start: "Sep 2023"
-    end: Present
+    end: "Dec 2024"
     bullets:
-      - Designed the Suparna drone, supplied to institutes including IIT Gandhinagar and BITS Pilani.
-      - Worked through overheating, fitting, and structural integrity issues during development.
-      - Designed a drone battery charger, using Ansys Icepak to optimize fan placement for thermal performance.
+      - Designed mechanical components for fixed-wing and multirotor UAVs across multiple product lines, including the Suparna research drone supplied to IIT Gandhinagar and BITS Pilani.
+      - Ran thermal and structural simulations (FEA, CFD); used Ansys Icepak to optimise the battery-charger fan placement.
+      - Assisted with prototyping and oversaw parts of manufacturing.
 
   - id: oef-intern
-    role: Intern
-    company: Opto Electronics Factory (OEF), Dehradun
+    role: Mechanical Engineering Intern
+    company: Opto Electronics Factory (OEF)
     location: Dehradun, India
-    start: "Jul 2023"
+    start: "Jun 2023"
     end: "Jul 2023"
     bullets:
-      - Worked in the CNC and Quality departments at Opto Electronics Factory.
+      - Quality-control and CNC machining processes used in manufacturing targeting systems for main battle tanks.
 
   - id: uiet-mechanical
-    role: Mechanical Engineering (BE, Lateral Entry)
-    company: UIET, Chandigarh
+    role: BE, Mechanical Engineering
+    company: UIET, Panjab University
     location: Chandigarh, India
-    start: "Sep 2022"
-    end: Present
+    start: "2022"
+    end: "2025"
     bullets:
-      - Started BE in Mechanical Engineering at UIET via lateral entry.
+      - Lateral entry after the diploma.
 
   - id: gpd-diploma
-    role: Diploma, Mechanical (Automobile)
+    role: Diploma, Mechanical Engineering (Automobile)
     company: Government Polytechnic, Dehradun
     location: Dehradun, India
     start: "2019"
-    end: "Sep 2022"
+    end: "2022"
     bullets:
-      - Completed diploma in Mechanical (Automobile) Engineering.
+      - Diploma in Mechanical (Automobile) Engineering.

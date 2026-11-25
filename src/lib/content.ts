@@ -14,7 +14,7 @@ const publicRoot = path.join(process.cwd(), "public");
 // Must match `basePath` in next.config.ts. Static export + GitHub Pages serves
 // this site under a subpath, and libraries like drei's useGLTF fetch raw URLs
 // directly (Next only auto-prefixes basePath for its own routing/<Image>).
-const BASE_PATH = "/New_Pft_W_CAD";
+import { BASE_PATH } from "./siteUrl";
 
 function withBasePath(url: string): string {
   return `${BASE_PATH}${url}`;
@@ -101,7 +101,11 @@ export function loadPortfolioContent(): PortfolioContent {
     defaultModel: ensurePublicAsset(siteYaml.defaultModel)
       ? withBasePath(siteYaml.defaultModel)
       : "",
-    links: siteYaml.links ?? [],
+    // Site-relative links (e.g. the resume PDF in public/) need the
+    // GitHub Pages base path; external links pass through unchanged.
+    links: (siteYaml.links ?? []).map((link) =>
+      link.href.startsWith("/") ? { ...link, href: withBasePath(link.href) } : link,
+    ),
     location: siteYaml.location,
     bio: siteYaml.bio ?? [],
     favoriteSong: siteYaml.favoriteSong,

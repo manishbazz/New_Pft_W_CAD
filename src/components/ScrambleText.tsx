@@ -36,10 +36,8 @@ export function ScrambleText({
   const [display, setDisplay] = useState(text);
 
   useEffect(() => {
-    if (!play) {
-      setDisplay(text);
-      return;
-    }
+    // Not playing: the render below shows `text` directly.
+    if (!play) return;
 
     let cancelled = false;
     let rafId = 0;
@@ -82,7 +80,7 @@ export function ScrambleText({
       if (!allDone) rafId = requestAnimationFrame(tick);
     };
 
-    setDisplay(chars.map((c) => (c === " " ? " " : "")).join(""));
+    // The first tick (elapsed = 0) blanks the text and starts the reveal.
     rafId = requestAnimationFrame(tick);
 
     return () => {
@@ -93,5 +91,5 @@ export function ScrambleText({
   }, [play, text]);
 
   const Component = as;
-  return <Component className={className}>{display}</Component>;
+  return <Component className={className}>{play ? display : text}</Component>;
 }

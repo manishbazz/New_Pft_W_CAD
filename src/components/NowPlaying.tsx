@@ -50,13 +50,11 @@ const POLL_INTERVAL_MS = 30_000;
 
 export function NowPlaying({ statusUrl, fallback }: NowPlayingProps) {
   const [live, setLive] = useState<LiveStatus | null>(null);
-  const [checked, setChecked] = useState(false);
+  // With no status URL there's nothing to wait for.
+  const [checked, setChecked] = useState(!statusUrl);
 
   useEffect(() => {
-    if (!statusUrl) {
-      setChecked(true);
-      return;
-    }
+    if (!statusUrl) return;
 
     let cancelled = false;
 
@@ -90,7 +88,7 @@ export function NowPlaying({ statusUrl, fallback }: NowPlayingProps) {
     return (
       <div className="flex items-center gap-3 rounded-md border border-[var(--border)] px-4 py-3 text-sm text-[var(--muted)]">
         <span className="size-2 animate-pulse rounded-full bg-[var(--muted)]" />
-        Checking what's playing…
+        Checking what&apos;s playing…
       </div>
     );
   }
