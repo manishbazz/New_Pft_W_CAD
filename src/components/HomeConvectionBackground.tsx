@@ -7,8 +7,7 @@ import type { FlowController } from "./panels/flow/types";
 /**
  * Ambient, full-viewport buoyant-plume background for the home screen.
  * GPU-only (see createConvectionSim.ts for why) — renders nothing on
- * unsupported browsers or when the user prefers reduced motion, rather
- * than falling back to a CPU simulation running full-screen.
+ * unsupported browsers, rather than falling back to a CPU simulation running full-screen.
  *
  * Optional disturbance: an "Add obstacle" toggle drops a solid (square,
  * circle, or triangle) into the plume that can be click-and-dragged around.
@@ -38,11 +37,17 @@ export function HomeConvectionBackground() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const controller = createConvectionSim(canvas);
-    controllerRef.current = controller;
+    controllerRef.current = createConvectionSim(canvas);
+    // After a GPU context loss the old programs/textures are gone; rebuild.
+    const onRestored = () => {
+      controllerRef.current?.destroy();
+      controllerRef.current = createConvectionSim(canvas);
+    };
+    canvas.addEventListener("webglcontextrestored", onRestored);
 
     return () => {
-      controller?.destroy();
+      canvas.removeEventListener("webglcontextrestored", onRestored);
+      controllerRef.current?.destroy();
       controllerRef.current = null;
     };
   }, []);

@@ -80,20 +80,25 @@ export function HomeParticles({ boundsRef }: HomeParticlesProps) {
     // text's layout size after the very first measurement.
     const refit = window.setTimeout(measureBounds, 250);
 
-    let particles = Array.from({ length: PARTICLE_COUNT }, () =>
+    const particles = Array.from({ length: PARTICLE_COUNT }, () =>
       spawnParticle(bounds),
     );
 
     let rafId = 0;
-    let start = performance.now();
+    const start = performance.now();
 
+    let lastNow = start;
     const render = (now: number) => {
       const elapsed = now - start;
+      // Velocities are tuned in px per 60 Hz frame; scale by real frame time
+      // so particles drift at the same speed on 120/144 Hz displays.
+      const k = Math.min(3, Math.max(0, (now - lastNow) / (1000 / 60)));
+      lastNow = now;
       ctx.clearRect(0, 0, width, height);
 
       for (const p of particles) {
-        p.x += p.vx;
-        p.y += p.vy;
+        p.x += p.vx * k;
+        p.y += p.vy * k;
 
         const left = bounds.x;
         const right = bounds.x + bounds.width;

@@ -79,13 +79,20 @@ export function createGLTarget(
   h: number,
   internalFormat: number,
   format: number,
+  // Half floats are filterable everywhere, so LINEAR works for advected
+  // fields. Full 32-bit floats are only filterable with
+  // OES_texture_float_linear, so 32F targets (pressure, divergence — only
+  // ever read at texel centres) use NEAREST.
+  type: number = gl.HALF_FLOAT,
+  filterOverride?: number,
 ): GLTarget | null {
   const texture = gl.createTexture();
   if (!texture) return null;
+  const filter = filterOverride ?? (type === gl.FLOAT ? gl.NEAREST : gl.LINEAR);
   gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, gl.HALF_FLOAT, null);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
@@ -103,9 +110,11 @@ export function createGLDoubleTarget(
   h: number,
   internalFormat: number,
   format: number,
+  type: number = gl.HALF_FLOAT,
+  filterOverride?: number,
 ): GLDoubleTarget | null {
-  const a = createGLTarget(gl, w, h, internalFormat, format);
-  const b = createGLTarget(gl, w, h, internalFormat, format);
+  const a = createGLTarget(gl, w, h, internalFormat, format, type, filterOverride);
+  const b = createGLTarget(gl, w, h, internalFormat, format, type, filterOverride);
   if (!a || !b) return null;
   const state: GLDoubleTarget = {
     read: a,
