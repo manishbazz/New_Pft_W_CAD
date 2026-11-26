@@ -37,4 +37,4 @@ bio:
 # Live "now playing" card on the About page: URL of the Cloudflare Worker in
 # /now-playing-worker (setup in now-playing-worker/README.md). Leave blank
 # to show favoriteSong above instead.
-spotifyStatusUrl:
+spotifyStatusUrl: https://now-playing.bazztv17.workers.dev/

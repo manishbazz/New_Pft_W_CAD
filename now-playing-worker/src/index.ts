@@ -21,8 +21,10 @@
  * ~4 upstream calls a minute.
  */
 
+const DEFAULT_ORIGINS = "https://manishbazz.github.io,http://localhost:3000,http://127.0.0.1:3000";
+
 export interface Env {
-  ALLOWED_ORIGINS: string;
+  ALLOWED_ORIGINS?: string;
   SETUP_MODE?: string;
   SPOTIFY_CLIENT_ID?: string;
   SPOTIFY_CLIENT_SECRET?: string;
@@ -159,7 +161,7 @@ async function fromLastfm(env: Env): Promise<NowPlaying | null> {
 
 function corsHeaders(request: Request, env: Env): Record<string, string> {
   const origin = request.headers.get("Origin") ?? "";
-  const allowed = env.ALLOWED_ORIGINS.split(",").map((s) => s.trim());
+  const allowed = (env.ALLOWED_ORIGINS || DEFAULT_ORIGINS).split(",").map((s) => s.trim());
   return allowed.includes(origin)
     ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" }
     : { Vary: "Origin" };
@@ -197,10 +199,11 @@ async function handleSetup(request: Request, env: Env, url: URL): Promise<Respon
   });
   if (!res.ok) return html(`<p>Token exchange failed (${res.status}): ${await res.text()}</p>`, 502);
   const data = (await res.json()) as { refresh_token: string };
-  return html(`<h2>Your refresh token</h2>
-<p>Run <code>npx wrangler secret put SPOTIFY_REFRESH_TOKEN</code> and paste:</p>
-<textarea rows="4" style="width:100%" readonly>${data.refresh_token}</textarea>
-<p>Then set <code>SETUP_MODE = "0"</code> in wrangler.toml and run <code>npx wrangler deploy</code> again, so this page is switched off.</p>`);
+  return html(`<h2>Spotify connected</h2>
+<p>Save this refresh token as the worker secret <code>SPOTIFY_REFRESH_TOKEN</code>
+(Cloudflare dashboard -> now-playing -> Settings -> Variables and secrets, or
+<code>npx wrangler secret put SPOTIFY_REFRESH_TOKEN</code>), then set SETUP_MODE back to 0:</p>
+<textarea id="rt" rows="4" style="width:100%" readonly>${data.refresh_token}</textarea>`);
 }
 
 export default {

@@ -75,6 +75,19 @@ spotifyStatusUrl: https://now-playing.<your-subdomain>.workers.dev/
 Commit and push; the About page shows the live card (album art, animated
 bars and a progress bar while playing; "Last played · 2 h ago" otherwise).
 
+## Live deployment
+
+Deployed via the Cloudflare dashboard (no CLI) at
+`https://now-playing.bazztv17.workers.dev/` (Spotify route). Variables:
+`SPOTIFY_CLIENT_ID`, `SETUP_MODE=0`; secrets: `SPOTIFY_CLIENT_SECRET`,
+`SPOTIFY_REFRESH_TOKEN`. `ALLOWED_ORIGINS` falls back to the default in the
+code when unset.
+
+**The Spotify refresh token expires after 180 days** (shown on the app's
+Basic Information page). When the card stops updating: set `SETUP_MODE` to
+`1`, open `/login`, approve, save the new token as `SPOTIFY_REFRESH_TOKEN`,
+set `SETUP_MODE` back to `0`.
+
 ## Notes
 
 - `ALLOWED_ORIGINS` in `wrangler.toml` limits which sites may call the
