@@ -1,26 +1,42 @@
 "use client";
 
-import type { FlowController } from "./types";
+import type { FlowController, FlowView } from "./types";
+import {
+  createStrouhalMeter,
+  FLOW_BODY_X,
+  FLOW_BODY_Y,
+  FLOW_DIAMETER,
+  FLOW_MAX_NX,
+  FLOW_MAX_STEPS_PER_FRAME,
+  FLOW_MAX_SUBSTEP_DT,
+  FLOW_MIN_NX,
+  FLOW_NU,
+  FLOW_NY,
+  FLOW_PROBE_DX,
+  FLOW_PROBE_DY,
+  FLOW_RE,
+  FLOW_SMOKE_BAND_MARGIN,
+  FLOW_SOR_OMEGA,
+  FLOW_SOR_PASSES,
+  FLOW_STRIPE_SPACING,
+  FLOW_STRIPE_WIDTH,
+  FLOW_TIME_SCALE,
+  FLOW_U_INF,
+} from "./flowParams";
 
 /**
- * CPU (canvas 2D) fallback backend — the original working implementation,
- * used automatically whenever WebGL2 isn't available. Same physics, same
- * visuals, same public interface as the GPU backend.
+ * CPU (canvas 2D) fallback backend — used automatically when WebGL2 or
+ * float render targets aren't available. Same equations, scheme, boundary
+ * conditions and parameters as createGpuFlowSim.ts (see that file and
+ * flowParams.ts): MacCormack advection, explicit viscosity (nu = U D / Re),
+ * red-black SOR projection warm-started across steps with p = 0 at the
+ * outlet, and a moving no-slip cylinder.
+ *
+ * Grid is cell-centred with bilinear clamp-to-edge sampling, matching the
+ * GPU texture sampling. Row 0 is the TOP of the canvas here (canvas 2D
+ * convention); the physics is symmetric so only pointer mapping cares.
  */
 
-const BASE_NY = 64;
-const MIN_NX = 80;
-const MAX_NX = 220;
-const PROJECT_ITERATIONS = 30;
-const U_INF = 1.0;
-
-const BASE_TIME_SCALE = 35;
-const MAX_SUBSTEP_DT = 0.16;
-const DYE_SPEED_MULTIPLIER = 1.5;
-
-const SMOKE_BAND_MARGIN = 3;
-const STRIPE_SPACING = 3;
-const STRIPE_WIDTH = 2;
 const SMOKE_BLUR_PX = 1.1;
 
 export function createCpuFlowSim(
@@ -31,18 +47,22 @@ export function createCpuFlowSim(
   if (!context) return null;
   const ctx: CanvasRenderingContext2D = context;
 
-  let NX = MIN_NX;
-  let NY = BASE_NY;
+  const NY = FLOW_NY;
+  let NX = FLOW_MIN_NX;
+  let N = NX * NY;
 
-  let u = new Float32Array(NX * NY);
-  let v = new Float32Array(NX * NY);
-  let u0 = new Float32Array(NX * NY);
-  let v0 = new Float32Array(NX * NY);
-  let p = new Float32Array(NX * NY);
-  let div = new Float32Array(NX * NY);
-  let solid = new Uint8Array(NX * NY);
-  let dye = new Float32Array(NX * NY);
-  let dye0 = new Float32Array(NX * NY);
+  let u = new Float32Array(N);
+  let v = new Float32Array(N);
+  let tu = new Float32Array(N);
+  let tv = new Float32Array(N);
+  let hu = new Float32Array(N);
+  let hv = new Float32Array(N);
+  let p = new Float32Array(N);
+  let div = new Float32Array(N);
+  let solid = new Uint8Array(N);
+  let dye = new Float32Array(N);
+  let tdye = new Float32Array(N);
+  let hdye = new Float32Array(N);
 
   const fieldCanvas = document.createElement("canvas");
   const fieldCtx = fieldCanvas.getContext("2d");
@@ -50,352 +70,332 @@ export function createCpuFlowSim(
 
   let width = 0;
   let height = 0;
-  let dpr = 1;
 
-  let bodyFracX = 0.42;
-  let bodyFracY = 0.5;
+  let bodyFracX = FLOW_BODY_X;
+  let bodyFracY = FLOW_BODY_Y;
   let targetFracX = bodyFracX;
   let targetFracY = bodyFracY;
   let bodyX = 0;
   let bodyY = 0;
-  let bodyRadius = 1;
+  let bodyVelX = 0;
+  let bodyVelY = 0;
   let hovering = false;
   let raf = 0;
   let running = false;
   let last = performance.now();
+  let acc = 0;
+  let simTime = 0;
+  let view: FlowView = "dye";
+  const meter = createStrouhalMeter();
+  const radius = FLOW_DIAMETER / 2;
 
   const idx = (x: number, y: number) => y * NX + x;
-  const clamp = (x: number, lo: number, hi: number) =>
-    Math.max(lo, Math.min(hi, x));
+  const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
-  function sampleField(field: Float32Array, x: number, y: number) {
-    const cx = clamp(x, 0, NX - 1.001);
-    const cy = clamp(y, 0, NY - 1.001);
-    const x0 = Math.floor(cx);
-    const y0 = Math.floor(cy);
-    const x1 = x0 + 1;
-    const y1 = y0 + 1;
-    const tx = cx - x0;
-    const ty = cy - y0;
-
-    const i00 = idx(x0, y0);
-    const i10 = idx(x1, y0);
-    const i01 = idx(x0, y1);
-    const i11 = idx(x1, y1);
-
+  /** Bilinear sample at grid position (cell centres at i + 0.5). */
+  function sample(f: Float32Array, gx: number, gy: number) {
+    const x = clamp(gx - 0.5, 0, NX - 1);
+    const y = clamp(gy - 0.5, 0, NY - 1);
+    const x0 = Math.min(Math.floor(x), NX - 2);
+    const y0 = Math.min(Math.floor(y), NY - 2);
+    const tx = x - x0;
+    const ty = y - y0;
+    const i = y0 * NX + x0;
     return (
-      (field[i00] * (1 - tx) + field[i10] * tx) * (1 - ty) +
-      (field[i01] * (1 - tx) + field[i11] * tx) * ty
+      f[i] * (1 - tx) * (1 - ty) +
+      f[i + 1] * tx * (1 - ty) +
+      f[i + NX] * (1 - tx) * ty +
+      f[i + NX + 1] * tx * ty
     );
   }
 
-  function allocateGrid(newNX: number, newNY: number) {
-    NX = newNX;
-    NY = newNY;
-    u = new Float32Array(NX * NY);
-    v = new Float32Array(NX * NY);
-    u0 = new Float32Array(NX * NY);
-    v0 = new Float32Array(NX * NY);
-    p = new Float32Array(NX * NY);
-    div = new Float32Array(NX * NY);
-    solid = new Uint8Array(NX * NY);
-    dye = new Float32Array(NX * NY);
-    dye0 = new Float32Array(NX * NY);
-
-    fieldCanvas.width = NX;
-    fieldCanvas.height = NY;
-    fieldImage = fieldCtx ? fieldCtx.createImageData(NX, NY) : null;
+  /** MacCormack advection of `f` into `out`, using `hat` as scratch. */
+  function advect(f: Float32Array, out: Float32Array, hat: Float32Array, dt: number) {
+    for (let y = 0; y < NY; y++) {
+      for (let x = 0; x < NX; x++) {
+        const i = idx(x, y);
+        hat[i] = sample(f, x + 0.5 - u[i] * dt, y + 0.5 - v[i] * dt);
+      }
+    }
+    for (let y = 0; y < NY; y++) {
+      for (let x = 0; x < NX; x++) {
+        const i = idx(x, y);
+        const gx = x + 0.5;
+        const gy = y + 0.5;
+        const back = sample(hat, gx + u[i] * dt, gy + v[i] * dt);
+        let c = hat[i] + 0.5 * (f[i] - back);
+        // Limiter: clamp to the 4 cells around the back-traced point.
+        const px = clamp(gx - u[i] * dt - 0.5, 0, NX - 1);
+        const py = clamp(gy - v[i] * dt - 0.5, 0, NY - 1);
+        const j = Math.min(Math.floor(py), NY - 2) * NX + Math.min(Math.floor(px), NX - 2);
+        const a = f[j], b = f[j + 1], d = f[j + NX], e = f[j + NX + 1];
+        c = clamp(c, Math.min(a, b, d, e), Math.max(a, b, d, e));
+        out[i] = c;
+      }
+    }
   }
 
   function updateBodyMask() {
     bodyX = bodyFracX * NX;
     bodyY = bodyFracY * NY;
-    bodyRadius = Math.max(4, Math.min(NX, NY) * 0.14);
-    solid.fill(0);
-    const r2 = bodyRadius * bodyRadius;
-
-    for (let y = 1; y < NY - 1; y++) {
-      for (let x = 1; x < NX - 1; x++) {
-        const dx = x - bodyX;
-        const dy = y - bodyY;
-        if (dx * dx + dy * dy <= r2) solid[idx(x, y)] = 1;
+    const r2 = radius * radius;
+    for (let y = 0; y < NY; y++) {
+      for (let x = 0; x < NX; x++) {
+        const dx = x + 0.5 - bodyX;
+        const dy = y + 0.5 - bodyY;
+        solid[idx(x, y)] = dx * dx + dy * dy < r2 ? 1 : 0;
       }
     }
   }
 
-  function isEdgeSolid(x: number, y: number) {
-    if (!solid[idx(x, y)]) return false;
-    if (x === 0 || x === NX - 1 || y === 0 || y === NY - 1) return true;
-    return (
-      !solid[idx(x + 1, y)] ||
-      !solid[idx(x - 1, y)] ||
-      !solid[idx(x, y + 1)] ||
-      !solid[idx(x, y - 1)]
-    );
-  }
-
-  function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    width = canvas.clientWidth;
-    height = canvas.clientHeight;
-    canvas.width = Math.max(1, Math.round(width * dpr));
-    canvas.height = Math.max(1, Math.round(height * dpr));
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const aspect = height > 0 ? width / height : 2;
-    const nextNX = clamp(Math.round(BASE_NY * aspect), MIN_NX, MAX_NX);
-    const nextNY = BASE_NY;
-
-    if (nextNX !== NX || nextNY !== NY) {
-      allocateGrid(nextNX, nextNY);
-      applyInletBoundary();
-    }
-
-    updateBodyMask();
-    ctx.fillStyle = "rgb(7, 8, 9)";
-    ctx.fillRect(0, 0, width, height);
-  }
-
-  function applyInletBoundary() {
+  function applyVelBC() {
     for (let y = 0; y < NY; y++) {
-      u[idx(0, y)] = U_INF;
-      v[idx(0, y)] = 0;
-      u[idx(1, y)] = U_INF;
-    }
-    for (let x = 0; x < NX; x++) {
-      u[idx(x, 0)] = U_INF;
-      v[idx(x, 0)] = 0;
-      u[idx(x, NY - 1)] = U_INF;
-      v[idx(x, NY - 1)] = 0;
-    }
-    for (let y = 0; y < NY; y++) {
+      for (let x = 0; x < 2; x++) {
+        u[idx(x, y)] = FLOW_U_INF;
+        v[idx(x, y)] = 0;
+      }
       u[idx(NX - 1, y)] = u[idx(NX - 2, y)];
       v[idx(NX - 1, y)] = v[idx(NX - 2, y)];
     }
-  }
-
-  function enforceObstacle() {
-    for (let i = 0; i < NX * NY; i++) {
+    for (let x = 0; x < NX; x++) {
+      v[idx(x, 0)] = 0;
+      v[idx(x, NY - 1)] = 0;
+    }
+    for (let i = 0; i < N; i++) {
       if (solid[i]) {
-        u[i] = 0;
-        v[i] = 0;
+        u[i] = bodyVelX;
+        v[i] = bodyVelY;
       }
     }
   }
 
-  function setScalarBoundary(field: Float32Array) {
+  function allocateGrid(nx: number) {
+    NX = nx;
+    N = NX * NY;
+    u = new Float32Array(N).fill(FLOW_U_INF);
+    v = new Float32Array(N);
+    tu = new Float32Array(N);
+    tv = new Float32Array(N);
+    hu = new Float32Array(N);
+    hv = new Float32Array(N);
+    p = new Float32Array(N);
+    div = new Float32Array(N);
+    solid = new Uint8Array(N);
+    dye = new Float32Array(N);
+    tdye = new Float32Array(N);
+    hdye = new Float32Array(N);
+    fieldCanvas.width = NX;
+    fieldCanvas.height = NY;
+    fieldImage = fieldCtx ? fieldCtx.createImageData(NX, NY) : null;
+    updateBodyMask();
+    // Small transverse kick behind the body to break symmetry.
     for (let y = 0; y < NY; y++) {
-      field[idx(0, y)] = field[idx(1, y)];
-      field[idx(NX - 1, y)] = field[idx(NX - 2, y)];
+      for (let x = Math.floor(bodyX); x < Math.min(NX, bodyX + 6 * radius); x++) v[idx(x, y)] = 0.05;
     }
-    for (let x = 0; x < NX; x++) {
-      field[idx(x, 0)] = field[idx(x, 1)];
-      field[idx(x, NY - 1)] = field[idx(x, NY - 2)];
-    }
+    applyVelBC();
+    simTime = 0;
+    meter.reset();
   }
 
-  function neighborPressure(cx: number, cy: number, self: number) {
-    const i = idx(cx, cy);
-    return solid[i] ? self : p[i];
+  function pNeighbour(j: number, self: number) {
+    return solid[j] ? self : p[j];
   }
 
-  function project(iterations: number) {
-    for (let y = 1; y < NY - 1; y++) {
-      for (let x = 1; x < NX - 1; x++) {
+  function project() {
+    for (let y = 0; y < NY; y++) {
+      for (let x = 0; x < NX; x++) {
         const i = idx(x, y);
         if (solid[i]) {
           div[i] = 0;
-          p[i] = 0;
           continue;
         }
-        div[i] =
-          -0.5 *
-          (u[idx(x + 1, y)] -
-            u[idx(x - 1, y)] +
-            (v[idx(x, y + 1)] - v[idx(x, y - 1)]));
-        p[i] = 0;
+        const L = u[idx(Math.max(x - 1, 0), y)];
+        const R = u[idx(Math.min(x + 1, NX - 1), y)];
+        const B = v[idx(x, Math.max(y - 1, 0))];
+        const T = v[idx(x, Math.min(y + 1, NY - 1))];
+        div[i] = -0.5 * (R - L + (T - B));
       }
     }
-
-    for (let k = 0; k < iterations; k++) {
-      for (let y = 1; y < NY - 1; y++) {
-        for (let x = 1; x < NX - 1; x++) {
+    // Red-black SOR, warm-started (p is kept from the previous step).
+    for (let pass = 0; pass < FLOW_SOR_PASSES; pass++) {
+      const color = pass & 1;
+      for (let y = 0; y < NY; y++) {
+        for (let x = (y + color) & 1; x < NX; x += 2) {
           const i = idx(x, y);
-          if (solid[i]) {
-            p[i] = 0;
+          if (solid[i]) continue;
+          if (x === NX - 1) {
+            p[i] = 0; // outlet Dirichlet
             continue;
           }
-          const pl = neighborPressure(x - 1, y, p[i]);
-          const pr = neighborPressure(x + 1, y, p[i]);
-          const pd = neighborPressure(x, y - 1, p[i]);
-          const puN = neighborPressure(x, y + 1, p[i]);
-          p[i] = (div[i] + pl + pr + pd + puN) * 0.25;
+          const self = p[i];
+          const L = pNeighbour(idx(Math.max(x - 1, 0), y), self);
+          const R = pNeighbour(idx(x + 1, y), self);
+          const B = pNeighbour(idx(x, Math.max(y - 1, 0)), self);
+          const T = pNeighbour(idx(x, Math.min(y + 1, NY - 1)), self);
+          const gs = 0.25 * (div[i] + L + R + B + T);
+          p[i] = self + FLOW_SOR_OMEGA * (gs - self);
         }
       }
-      setScalarBoundary(p);
     }
-
-    for (let y = 1; y < NY - 1; y++) {
-      for (let x = 1; x < NX - 1; x++) {
+    for (let y = 0; y < NY; y++) {
+      for (let x = 0; x < NX; x++) {
         const i = idx(x, y);
         if (solid[i]) continue;
-        const pl = neighborPressure(x - 1, y, p[i]);
-        const pr = neighborPressure(x + 1, y, p[i]);
-        const pd = neighborPressure(x, y - 1, p[i]);
-        const puN = neighborPressure(x, y + 1, p[i]);
-        u[i] -= 0.5 * (pr - pl);
-        v[i] -= 0.5 * (puN - pd);
+        const self = p[i];
+        const L = pNeighbour(idx(Math.max(x - 1, 0), y), self);
+        const R = pNeighbour(idx(Math.min(x + 1, NX - 1), y), self);
+        const B = pNeighbour(idx(x, Math.max(y - 1, 0)), self);
+        const T = pNeighbour(idx(x, Math.min(y + 1, NY - 1)), self);
+        u[i] -= 0.5 * (R - L);
+        v[i] -= 0.5 * (T - B);
       }
     }
   }
 
-  function advectVelocity(dt: number) {
-    u0.set(u);
-    v0.set(v);
-
-    for (let y = 1; y < NY - 1; y++) {
-      for (let x = 1; x < NX - 1; x++) {
-        const i = idx(x, y);
-        if (solid[i]) {
-          u[i] = 0;
-          v[i] = 0;
-          continue;
-        }
-        const bx = x - u0[i] * dt;
-        const by = y - v0[i] * dt;
-        u[i] = sampleField(u0, bx, by);
-        v[i] = sampleField(v0, bx, by);
-      }
-    }
-
-    applyInletBoundary();
-    enforceObstacle();
-  }
-
-  function stripeSource(y: number) {
-    const centerY = NY / 2;
-    const bandHalf = bodyRadius + SMOKE_BAND_MARGIN;
-    if (Math.abs(y - centerY) > bandHalf) return 0;
-    const band = Math.floor(y) % STRIPE_SPACING;
-    return band < STRIPE_WIDTH ? 1 : 0;
-  }
-
-  function advectDye(dt: number) {
-    dye0.set(dye);
-
-    for (let y = 1; y < NY - 1; y++) {
-      for (let x = 1; x < NX - 1; x++) {
-        const i = idx(x, y);
-        if (solid[i]) {
-          dye[i] = 0;
-          continue;
-        }
-        const bx = x - u[i] * dt * DYE_SPEED_MULTIPLIER;
-        const by = y - v[i] * dt * DYE_SPEED_MULTIPLIER;
-        dye[i] = sampleField(dye0, bx, by);
-      }
-    }
-
-    for (let y = 1; y < NY - 1; y++) {
-      const source = stripeSource(y);
-      dye[idx(0, y)] = source;
-      dye[idx(1, y)] = source;
-    }
-    for (let x = 0; x < NX; x++) {
-      dye[idx(x, 0)] = 0;
-      dye[idx(x, NY - 1)] = 0;
-    }
-  }
-
-  function drawSmoke() {
-    if (fieldCtx && fieldImage) {
-      const data = fieldImage.data;
-      for (let i = 0; i < NX * NY; i++) {
-        const a = dye[i];
-        const o = i * 4;
-        data[o] = 7 + (143 - 7) * a;
-        data[o + 1] = 8 + (163 - 8) * a;
-        data[o + 2] = 9 + (176 - 9) * a;
-        data[o + 3] = 255;
-      }
-      fieldCtx.putImageData(fieldImage, 0, 0);
-    }
-
-    ctx.fillStyle = "rgb(7, 8, 9)";
-    ctx.fillRect(0, 0, width, height);
-
-    if (fieldCtx) {
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.filter = `blur(${SMOKE_BLUR_PX}px)`;
-      ctx.drawImage(fieldCanvas, 0, 0, width, height);
-      ctx.filter = "none";
-    }
-
-    drawBody();
-  }
-
-  function drawBody() {
-    const sx = width / NX;
-    const sy = height / NY;
-    const pad = 0.6;
-
-    ctx.fillStyle = "rgb(7, 8, 9)";
+  function diffuse(f: Float32Array, out: Float32Array, k: number) {
     for (let y = 0; y < NY; y++) {
       for (let x = 0; x < NX; x++) {
-        if (solid[idx(x, y)]) {
-          ctx.fillRect(x * sx - pad, y * sy - pad, sx + pad * 2, sy + pad * 2);
-        }
-      }
-    }
-
-    ctx.fillStyle = "rgba(143, 163, 176, 0.95)";
-    for (let y = 0; y < NY; y++) {
-      for (let x = 0; x < NX; x++) {
-        if (isEdgeSolid(x, y)) {
-          ctx.fillRect(x * sx - pad, y * sy - pad, sx + pad * 2, sy + pad * 2);
-        }
+        const i = idx(x, y);
+        const L = f[idx(Math.max(x - 1, 0), y)];
+        const R = f[idx(Math.min(x + 1, NX - 1), y)];
+        const B = f[idx(x, Math.max(y - 1, 0))];
+        const T = f[idx(x, Math.min(y + 1, NY - 1))];
+        out[i] = f[i] + k * (L + R + B + T - 4 * f[i]);
       }
     }
   }
 
   function step(dt: number) {
+    const prevX = bodyFracX * NX;
+    const prevY = bodyFracY * NY;
     if (hovering) {
       bodyFracX += (targetFracX - bodyFracX) * 0.12;
       bodyFracY += (targetFracY - bodyFracY) * 0.12;
-      updateBodyMask();
     }
+    bodyVelX = (bodyFracX * NX - prevX) / dt;
+    bodyVelY = (bodyFracY * NY - prevY) / dt;
+    if (hovering) updateBodyMask();
+    if (Math.hypot(bodyVelX, bodyVelY) > 0.05) meter.reset();
 
-    applyInletBoundary();
-    enforceObstacle();
-    project(PROJECT_ITERATIONS);
-    enforceObstacle();
-    advectVelocity(dt);
-    project(PROJECT_ITERATIONS);
-    advectDye(dt);
+    advect(u, tu, hu, dt);
+    advect(v, tv, hv, dt);
+    diffuse(tu, u, FLOW_NU * dt);
+    diffuse(tv, v, FLOW_NU * dt);
+    applyVelBC();
+    project();
+    applyVelBC();
+
+    advect(dye, tdye, hdye, dt);
+    const swap = dye;
+    dye = tdye;
+    tdye = swap;
+    const bandHalf = radius + FLOW_SMOKE_BAND_MARGIN;
+    for (let y = 0; y < NY; y++) {
+      const inBand =
+        Math.abs(y + 0.5 - NY * 0.5) <= bandHalf && y % FLOW_STRIPE_SPACING < FLOW_STRIPE_WIDTH;
+      dye[idx(0, y)] = dye[idx(1, y)] = inBand ? 1 : 0;
+    }
+    for (let x = 0; x < NX; x++) dye[idx(x, 0)] = dye[idx(x, NY - 1)] = 0;
+    for (let i = 0; i < N; i++) if (solid[i]) dye[i] = 0;
+    simTime += dt;
   }
 
-  function render(now: number) {
+  function drawField() {
+    if (!fieldImage || !fieldCtx) return;
+    const data = fieldImage.data;
+    const bg = [7, 8, 9];
+    const fg = [143, 163, 176];
+    for (let y = 0; y < NY; y++) {
+      for (let x = 0; x < NX; x++) {
+        const i = idx(x, y);
+        let r: number, g: number, b: number;
+        if (view === "vorticity") {
+          const w =
+            0.5 *
+            (v[idx(Math.min(x + 1, NX - 1), y)] - v[idx(Math.max(x - 1, 0), y)] -
+              (u[idx(x, Math.min(y + 1, NY - 1))] - u[idx(x, Math.max(y - 1, 0))]));
+          // Row 0 is the top here, so flip the sign to match the GPU colours.
+          const s = clamp(-w / 0.25, -1, 1);
+          const k = Math.pow(Math.abs(s), 0.7);
+          const c = s > 0 ? [219, 107, 92] : [84, 140, 219];
+          r = bg[0] + (c[0] - bg[0]) * k;
+          g = bg[1] + (c[1] - bg[1]) * k;
+          b = bg[2] + (c[2] - bg[2]) * k;
+        } else {
+          const a =
+            view === "speed"
+              ? Math.floor(clamp(Math.hypot(u[i], v[i]) / 1.6, 0, 1) * 10) / 10
+              : clamp(dye[i], 0, 1);
+          r = bg[0] + (fg[0] - bg[0]) * a;
+          g = bg[1] + (fg[1] - bg[1]) * a;
+          b = bg[2] + (fg[2] - bg[2]) * a;
+        }
+        if (solid[i]) [r, g, b] = bg;
+        const o = i * 4;
+        data[o] = r;
+        data[o + 1] = g;
+        data[o + 2] = b;
+        data[o + 3] = 255;
+      }
+    }
+    fieldCtx.putImageData(fieldImage, 0, 0);
+    ctx.fillStyle = "rgb(7, 8, 9)";
+    ctx.fillRect(0, 0, width, height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.filter = view === "dye" ? `blur(${SMOKE_BLUR_PX}px)` : "none";
+    ctx.drawImage(fieldCanvas, 0, 0, width, height);
+    ctx.filter = "none";
+    // Body outline.
+    const sx = width / NX;
+    const sy = height / NY;
+    ctx.beginPath();
+    ctx.ellipse(bodyX * sx, bodyY * sy, radius * sx, radius * sy, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgb(7, 8, 9)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(143, 163, 176, 0.95)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    width = canvas.clientWidth;
+    height = canvas.clientHeight;
+    canvas.width = Math.max(1, Math.round(width * dpr));
+    canvas.height = Math.max(1, Math.round(height * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const aspect = height > 0 ? width / height : 3;
+    const nextNX = clamp(Math.round(NY * aspect), FLOW_MIN_NX, FLOW_MAX_NX);
+    if (nextNX !== NX || simTime === 0) allocateGrid(nextNX);
+    drawField();
+  }
+
+  function frame(now: number) {
     if (!running) return;
-
-    const dt = Math.min(0.045, Math.max(0.001, (now - last) / 1000));
+    const realDt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
-
-    const totalDt = dt * BASE_TIME_SCALE;
-    const substeps = Math.max(1, Math.ceil(totalDt / MAX_SUBSTEP_DT));
-    const stepDt = totalDt / substeps;
-    for (let s = 0; s < substeps; s++) step(stepDt);
-
-    drawSmoke();
-
-    raf = requestAnimationFrame(render);
+    acc += realDt * FLOW_TIME_SCALE;
+    let steps = 0;
+    while (acc >= FLOW_MAX_SUBSTEP_DT && steps < FLOW_MAX_STEPS_PER_FRAME) {
+      step(FLOW_MAX_SUBSTEP_DT);
+      acc -= FLOW_MAX_SUBSTEP_DT;
+      steps++;
+    }
+    if (steps === FLOW_MAX_STEPS_PER_FRAME) acc = 0;
+    if (steps > 0) {
+      const px = Math.round(clamp(bodyX + FLOW_PROBE_DX * FLOW_DIAMETER, 0, NX - 1));
+      const py = Math.round(clamp(bodyY + FLOW_PROBE_DY * FLOW_DIAMETER, 0, NY - 1));
+      meter.push(simTime, v[idx(px, py)]);
+    }
+    drawField();
+    raf = requestAnimationFrame(frame);
   }
 
   function start() {
     if (running) return;
     running = true;
     last = performance.now();
-    raf = requestAnimationFrame(render);
+    raf = requestAnimationFrame(frame);
   }
 
   function stop() {
@@ -405,38 +405,21 @@ export function createCpuFlowSim(
 
   const onPointerMove = (event: PointerEvent) => {
     const rect = canvas.getBoundingClientRect();
-    const marginX = (bodyRadius + 2) / NX;
-    const marginY = (bodyRadius + 2) / NY;
-    targetFracX = clamp(
-      (event.clientX - rect.left) / Math.max(rect.width, 1),
-      marginX,
-      1 - marginX,
-    );
-    targetFracY = clamp(
-      (event.clientY - rect.top) / Math.max(rect.height, 1),
-      marginY,
-      1 - marginY,
-    );
+    const marginX = (radius + 3) / NX;
+    const marginY = (radius + 2) / NY;
+    targetFracX = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), Math.max(marginX, 0.08), 1 - marginX);
+    targetFracY = clamp((event.clientY - rect.top) / Math.max(rect.height, 1), marginY, 1 - marginY);
     hovering = true;
   };
-
   const onPointerLeave = () => {
     hovering = false;
   };
-
   const onVisibilityChange = () => {
-    if (document.hidden) {
-      stop();
-    } else if (isPlayingRef.current) {
-      start();
-    }
+    if (document.hidden) stop();
+    else if (isPlayingRef.current) start();
   };
 
-  allocateGrid(MIN_NX, BASE_NY);
   resize();
-  applyInletBoundary();
-  project(PROJECT_ITERATIONS);
-  drawSmoke();
 
   window.addEventListener("resize", resize);
   canvas.addEventListener("pointermove", onPointerMove);
@@ -446,6 +429,11 @@ export function createCpuFlowSim(
   return {
     start,
     stop,
+    setView(next: FlowView) {
+      view = next;
+      if (!running) drawField();
+    },
+    getStats: () => ({ re: FLOW_RE, st: meter.value() }),
     destroy() {
       stop();
       window.removeEventListener("resize", resize);

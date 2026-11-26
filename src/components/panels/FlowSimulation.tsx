@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { FlowController } from "./flow/types";
+import type { FlowController, FlowView } from "./flow/types";
+import { FLOW_RE } from "./flow/flowParams";
 import { supportsGpuFlowSim } from "./flow/supportsGpuFlowSim";
 import { createGpuFlowSim } from "./flow/createGpuFlowSim";
 import { createCpuFlowSim } from "./flow/createCpuFlowSim";
@@ -26,6 +27,8 @@ export function FlowSimulation() {
   const [isPlaying, setIsPlaying] = useState(false);
   const isPlayingRef = useRef(isPlaying);
   const controllerRef = useRef<FlowController | null>(null);
+  const [view, setView] = useState<FlowView>("dye");
+  const [st, setSt] = useState<number | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -52,10 +55,23 @@ export function FlowSimulation() {
     }
   }, [isPlaying]);
 
+  useEffect(() => {
+    controllerRef.current?.setView?.(view);
+  }, [view]);
+
+  // Poll the measured Strouhal number twice a second while running.
+  useEffect(() => {
+    if (!isPlaying) return;
+    const id = window.setInterval(() => {
+      setSt(controllerRef.current?.getStats?.().st ?? null);
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [isPlaying]);
+
   return (
     <div className="relative">
       <p className="mb-2 text-[10px] tracking-[0.2em] text-[var(--muted)] uppercase">
-        2D flow simulation — move the cylinder with your cursor
+        2D flow past a cylinder — move it with your cursor
       </p>
       <div className="relative">
         <canvas
@@ -91,6 +107,34 @@ export function FlowSimulation() {
           </button>
         )}
       </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] tracking-[0.15em] text-[var(--muted)] uppercase">
+        <span aria-live="polite">
+          Re = {FLOW_RE} · St = {st == null ? "—" : st.toFixed(2)}
+          <span className="normal-case tracking-normal"> (experiment ≈ 0.18–0.19)</span>
+        </span>
+        <span role="group" aria-label="Field to display" className="flex gap-1">
+          {(["dye", "vorticity", "speed"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              aria-pressed={view === v}
+              className={`rounded-full border px-2 py-0.5 transition-colors ${
+                view === v
+                  ? "border-[var(--foreground)] text-[var(--foreground)]"
+                  : "border-[var(--border)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </span>
+      </div>
+      <p className="mt-1 text-[10px] leading-relaxed text-[var(--muted)]">
+        Incompressible Navier–Stokes, ∂u/∂t + (u·∇)u = −∇p + ν∇²u, ∇·u = 0 ·
+        MacCormack advection, pressure projection by red-black SOR · St
+        measured live from a wake probe.
+      </p>
     </div>
   );
 }

@@ -1,8 +1,10 @@
 name: Manish Kumar Sharma
 designation: Mechanical Design Engineer
 contactEmail: bmanishsharma1718@gmail.com
-defaultModel: /models/default.glb
+defaultModel: /projects/suparna-drone/suparna.glb.enc
 links:
+  - label: Resume
+    href: /Manish_Kumar_Sharma_Resume.pdf
   - label: GitHub
     href: https://github.com/manishbazz
   - label: LinkedIn
@@ -25,14 +27,14 @@ bio:
     hehe.
 
 # Shown when spotifyStatusUrl below is unset/unreachable, or nothing is
-# currently playing. Edit this to whatever your actual favorite is.
-favoriteSong:
-  title: Song title
-  artist: Artist name
-  url: https://open.spotify.com/
+# currently playing. Left out until there's a real song to show (the old
+# "Song title / Artist name" placeholder was being displayed on the site).
+# favoriteSong:
+#   title: Song title
+#   artist: Artist name
+#   url: https://open.spotify.com/track/...
 
-# Optional: public JSON endpoint for a LIVE now-playing widget. See the
-# comment at the top of src/components/NowPlaying.tsx for how to set this
-# up (it needs a small serverless proxy — GitHub Pages alone can't hold
-# Spotify API secrets securely). Leave blank to just show favoriteSong above.
-spotifyStatusUrl:
+# Live "now playing" card on the About page: URL of the Cloudflare Worker in
+# /now-playing-worker (setup in now-playing-worker/README.md). Leave blank
+# to show favoriteSong above instead.
+spotifyStatusUrl: https://now-playing.bazztv17.workers.dev/

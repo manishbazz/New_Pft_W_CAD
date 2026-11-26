@@ -1,3 +1,7 @@
+import type { FlowStats } from "./flowParams";
+
+export type FlowView = "dye" | "vorticity" | "speed";
+
 export type FlowController = {
   start: () => void;
   stop: () => void;
@@ -18,4 +22,8 @@ export type FlowController = {
    * must optional-chain.
    */
   setObstacleShape?: (shape: "square" | "circle" | "triangle") => void;
+  /** Optional: switch what the cylinder-wake sim draws. */
+  setView?: (view: FlowView) => void;
+  /** Optional: live Reynolds / measured Strouhal numbers for a readout. */
+  getStats?: () => FlowStats;
 };

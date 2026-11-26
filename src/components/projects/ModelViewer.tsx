@@ -1,9 +1,10 @@
 "use client";
 
-import { Canvas } from "@react-three/fiber";
-import { Center, OrbitControls, useGLTF } from "@react-three/drei";
+import { Canvas, useLoader } from "@react-three/fiber";
+import { Center, OrbitControls } from "@react-three/drei";
 import { Component, Suspense, useMemo, type ReactNode } from "react";
 import * as THREE from "three";
+import { EncryptedGLTFLoader } from "./encryptedGltfLoader";
 
 type ModelViewerProps = {
   url?: string;
@@ -28,7 +29,8 @@ function FallbackSculpture() {
 const TARGET_SIZE = 2.6;
 
 function GlbModel({ url }: { url: string }) {
-  const { scene } = useGLTF(url);
+  // Decrypts *.glb.enc in memory (see encryptedGltfLoader.ts).
+  const { scene } = useLoader(EncryptedGLTFLoader, url);
   const cloned = useMemo(() => scene.clone(), [scene]);
 
   const scale = useMemo(() => {

@@ -8,6 +8,7 @@ import {
   type ComponentType,
 } from "react";
 import { HomeConvectionBackground } from "@/components/HomeConvectionBackground";
+import { useEntered } from "@/components/EntryGate";
 import { Nav } from "@/components/Nav";
 import { AboutPanel } from "@/components/panels/AboutPanel";
 import { ContactPanel } from "@/components/panels/ContactPanel";
@@ -72,6 +73,9 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
   const activeIndexRef = useRef(0);
 
   const active = PANEL_IDS[activeIndex];
+  // Panel intro animations (text scramble etc.) wait until the visitor is
+  // past the entry gate, since the site now renders underneath it.
+  const entered = useEntered();
 
   // Unlock audio on the very first interaction anywhere on the page, so
   // hover sounds work right after that instead of only after whichever
@@ -253,16 +257,18 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
             data-panel="home"
             aria-label="Home"
             aria-hidden={active !== "home"}
+            inert={active !== "home"}
             className="h-full shrink-0 overflow-hidden"
             style={{ width: `${panelWidthPercent}%` }}
           >
-            <HomePanel site={content.site} active={active === "home"} />
+            <HomePanel site={content.site} active={entered && active === "home"} />
           </section>
 
           <section
             data-panel="projects"
             aria-label="Projects"
             aria-hidden={active !== "projects"}
+            inert={active !== "projects"}
             className="h-full shrink-0 overflow-hidden"
             style={{ width: `${panelWidthPercent}%` }}
           >
@@ -270,7 +276,7 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
               <ProjectsPanel
                 projects={content.projects}
                 defaultModelUrl={content.site.defaultModel}
-                active={active === "projects"}
+                active={entered && active === "projects"}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-[var(--muted)]">
@@ -283,12 +289,13 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
             data-panel="experience"
             aria-label="Experience"
             aria-hidden={active !== "experience"}
+            inert={active !== "experience"}
             className="h-full shrink-0 overflow-hidden"
             style={{ width: `${panelWidthPercent}%` }}
           >
             <ExperiencePanel
               experience={content.experience}
-              active={active === "experience"}
+              active={entered && active === "experience"}
             />
           </section>
 
@@ -296,6 +303,7 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
             data-panel="about"
             aria-label="About"
             aria-hidden={active !== "about"}
+            inert={active !== "about"}
             className="h-full shrink-0 overflow-hidden"
             style={{ width: `${panelWidthPercent}%` }}
           >
@@ -304,7 +312,7 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
               location={content.site.location}
               favoriteSong={content.site.favoriteSong}
               spotifyStatusUrl={content.site.spotifyStatusUrl}
-              active={active === "about"}
+              active={entered && active === "about"}
             />
           </section>
 
@@ -312,12 +320,13 @@ export function PortfolioApp({ content }: PortfolioAppProps) {
             data-panel="contact"
             aria-label="Contact"
             aria-hidden={active !== "contact"}
+            inert={active !== "contact"}
             className="h-full shrink-0 overflow-hidden"
             style={{ width: `${panelWidthPercent}%` }}
           >
             <ContactPanel
               contactEmail={content.site.contactEmail}
-              active={active === "contact"}
+              active={entered && active === "contact"}
             />
           </section>
         </div>

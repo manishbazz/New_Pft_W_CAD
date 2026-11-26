@@ -1,0 +1,22 @@
+# Cloudflare Worker that tells the portfolio what you're listening to.
+# Deploy: see README.md in this folder.
+name = "now-playing"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[vars]
+# Sites allowed to call this endpoint from the browser (comma-separated).
+ALLOWED_ORIGINS = "https://manishbazz.github.io,http://localhost:3000,http://127.0.0.1:3000"
+# Set to "1" only while getting the Spotify refresh token (README step 3),
+# then back to "0" and redeploy.
+SETUP_MODE = "0"
+# Last.fm fallback (free Spotify accounts): set LASTFM_USER here and
+# LASTFM_API_KEY as a secret. If both are set, Last.fm is used instead of
+# the Spotify API.
+LASTFM_USER = ""
+
+# Secrets (never in this file):
+#   wrangler secret put SPOTIFY_CLIENT_ID
+#   wrangler secret put SPOTIFY_CLIENT_SECRET
+#   wrangler secret put SPOTIFY_REFRESH_TOKEN
+#   wrangler secret put LASTFM_API_KEY        (Last.fm route only)

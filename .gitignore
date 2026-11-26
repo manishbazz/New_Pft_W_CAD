@@ -42,3 +42,7 @@ next-env.d.ts
 
 # patchfiles
 *.patch
+
+# Original (unencrypted) 3D models. Only the encrypted *.glb.enc files in
+# public/ are committed — run `bun run protect-models` after changing these.
+/models-src/

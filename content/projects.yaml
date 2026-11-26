@@ -1,53 +1,78 @@
 projects:
+  high-reach-pantograph:
+    title: High-Reach Pantograph
+    summary: Constant-force cam-and-chain drive, linkage optimisation and failure investigation for a railway pantograph (Electrowaves).
+    description: |
+      Single-arm high-reach pantograph that must hold 7 ± 1 kgf contact force from 0.15 to 3.6 m at one constant air pressure.
+      - Linkage: SLSQP optimisation of all 7 links to minimise collector-head tilt; input force from virtual work, cutting the initial lifting pressure from 6.8 bar to 3.6 bar.
+      - Cam: profile synthesised from an energy balance (dH/dβ = τ/F) and checked with an independent forward simulation of the chain wrap: 7 ± 0.05 kgf predicted over the full range.
+      - Failure: lever-arm bending traced with load-path analysis and FEA (gmsh + CalculiX); redesign cut peak arm moment by 20 % and chain load by 24 %.
+      - Aerodynamics: OpenFOAM (snappyHexMesh) for C_L, C_D and moment coefficients.
+      Tools: Python (SciPy SLSQP), OpenFOAM, CalculiX, SolidWorks.
+
+  heat-sink-optimisation:
+    title: Heat Sink Optimisation for AC Chargers
+    summary: Icepak parametric study — 25 % lighter heat sink at the same thermal performance.
+    description: |
+      Parametric study in Ansys Icepak of the fin spacing of an AC-charger heat sink. The optimum fin gap of 10.56 mm gave a 25 % weight reduction while keeping the same thermal performance.
+
+  vtol-drone:
+    title: VTOL Drone
+    summary: Fixed-wing VTOL design — XFLR5 stability, OpenFOAM aerodynamics, modular SolidWorks airframe.
+    description: |
+      Designed a VTOL aircraft: stability analysis in XFLR5, aerodynamics in OpenFOAM, structural frame in SolidWorks, with a modular nose for different payloads. A tail incidence of −1.75° fixed an initially negative longitudinal stability margin within the hardware constraint.
+
+  brake-calipers:
+    title: Floating and Double-Acting Brake Calipers
+    summary: Two caliper designs for a 1000 kg cart (SAAL Motors); 1700 N·m braking torque from a Lagrangian model.
+    description: |
+      Designed two brake-caliper types for a 1000 kg (max) cart made by SAAL Motors. The required braking torque, 1700 N·m, came from a Lagrangian model of the cart; design optimisation gave measurable cost savings.
+      Tools: FEA, SolidWorks, CNC, laser cutting.
+
+  openfoam-solvers:
+    title: OpenFOAM Solvers
+    summary: Custom OpenFOAM solver work and cases.
+    description: |
+      Custom solver development and case setups in OpenFOAM. Code on GitHub.
+    doc: "https://github.com/manishbazz/openFoam_Solvers_FR"
+
   suparna-drone:
     title: Suparna Drone
-    summary: Drone designed for Menthosa Solutions, supplied to IIT Gandhinagar and BITS Pilani.
+    summary: 100 research drones built for Menthosa Solutions, supplied to IIT Gandhinagar and BITS Pilani.
     description: |
-      Designed a drone for Menthosa Solutions which was supplied to well-reputed
-      institutes in India. Key challenges included overheating, fitting, and
-      structural integrity of the drone.
-    model: suparna.glb
-    doc: https://menthosa.com/products/suparna
+      Designed a drone for Menthosa Solutions which was supplied to well-reputed institutes in India. Key challenges included overheating, fitting, and structural integrity of the drone.
+    model: suparna.glb.enc
+    doc: "https://menthosa.com/products/suparna"
 
   drone-charger:
     title: Drone Charger
     summary: Battery charger for the Suparna Drone with thermal-optimized fan placement.
     description: |
-      Designed a drone battery charger for the Suparna Drone. One of the main
-      thermal problems was the position of the cooling fan — Ansys Icepak was
-      used to determine the optimal fan position.
+      Designed a drone battery charger for the Suparna Drone. One of the main thermal problems was the position of the cooling fan — Ansys Icepak was used to determine the optimal fan position.
     doc: "https://docs.google.com/document/d/1c86K6fzZKybqeY_gTJ7ihEwocNIKFXn8/edit?usp=drive_link&ouid=100455715208712223028&rtpof=true&sd=true"
 
   diesel-filter-cutter:
     title: Diesel Filter Tube Cutting Machine
     summary: Machine for smoothly cutting thick paper tube sections for car diesel filters.
     description: |
-      A machine was built to smoothly cut sections of thick paper tubes used in
-      a car diesel filter. Main challenges were achieving a smooth cut and
-      reducing machine vibration.
+      A machine was built to smoothly cut sections of thick paper tubes used in a car diesel filter. Main challenges were achieving a smooth cut and reducing machine vibration.
 
   airfoil-shape-optimization:
     title: Airfoil Shape Optimization Using Reinforcement Learning
     summary: ML-driven shape optimization of a diamond-shaped airfoil (in progress).
     description: |
-      Shape optimization of a diamond-shaped airfoil using ML. Requires building
-      a high-accuracy pressure-based CFD model in Ansys Fluent, then using the
-      CFD result (lift-to-drag coefficient) as a reward signal with airfoil
-      dimensions as the target variables.
+      Shape optimization of a diamond-shaped airfoil using ML. Requires building a high-accuracy pressure-based CFD model in Ansys Fluent, then using the CFD result (lift-to-drag coefficient) as a reward signal with airfoil dimensions as the target variables.
     doc: "https://docs.google.com/document/d/1TDga0UedJ3nlezBwUNBzgezcxJIn3PHB/edit?usp=sharing&ouid=100455715208712223028&rtpof=true&sd=true"
 
   indoor-drone:
     title: Indoor Drone
     summary: Indoor drone with LIDAR-based obstacle avoidance.
     description: |
-      Built an indoor drone with obstacle avoidance. The main task was
-      determining the fitting and orientation of the LIDAR sensor used for
-      obstacle avoidance.
+      Built an indoor drone with obstacle avoidance. The main task was determining the fitting and orientation of the LIDAR sensor used for obstacle avoidance.
 
   aerothon-2024:
     title: Aerothon 2024
     summary: Drone design for Aerothon 2024 — National Rank 2, SAE India.
     description: |
-      Designed a drone for Aerothon 2024 (SAE India). The computational
-      analysis report helped the team secure a strong placement in Phase 1.
+      Designed a drone for Aerothon 2024 (SAE India). The computational analysis report helped the team secure a strong placement in Phase 1.
     doc: "https://drive.google.com/file/d/15rCEtsd_LoMRu4OLSv74_LjGZ9_NkVVS/view?usp=drive_link"
