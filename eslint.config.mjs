@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored Draco decoder (copied from three/examples/jsm/libs).
     "public/draco/**",
+    // Separate Cloudflare Worker project with its own tsconfig.
+    "now-playing-worker/**",
   ]),
 ]);
 

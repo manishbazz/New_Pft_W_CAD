@@ -19,7 +19,7 @@ export type SiteContent = {
   bio?: string[];
   favoriteSong?: FavoriteSong;
   /** Optional public JSON endpoint returning live Spotify now-playing status.
-   * See NowPlaying.tsx for the expected response shape. Falls back to
+   * Set up via now-playing-worker/README.md; see NowPlaying.tsx for the response shape. Falls back to
    * favoriteSong (above) when unset or unreachable. */
   spotifyStatusUrl?: string;
 };

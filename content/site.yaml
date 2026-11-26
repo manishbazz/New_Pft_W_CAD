@@ -34,8 +34,7 @@ bio:
 #   artist: Artist name
 #   url: https://open.spotify.com/track/...
 
-# Optional: public JSON endpoint for a LIVE now-playing widget. See the
-# comment at the top of src/components/NowPlaying.tsx for how to set this
-# up (it needs a small serverless proxy — GitHub Pages alone can't hold
-# Spotify API secrets securely). Leave blank to just show favoriteSong above.
+# Live "now playing" card on the About page: URL of the Cloudflare Worker in
+# /now-playing-worker (setup in now-playing-worker/README.md). Leave blank
+# to show favoriteSong above instead.
 spotifyStatusUrl:
