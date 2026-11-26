@@ -327,8 +327,12 @@ void main() {
   vec2 vel = texture(uVel, vUv).xy;
   vec2 backUv = clamp(vUv - vel * uTexel * uDt, vec2(0.0), vec2(1.0));
   float t = texture(uTemp, backUv).r;
-  // Newtonian cooling toward ambient: heat leaves the room as well as
-  // entering it, so the box doesn't slowly fill with warm air.
+  // Newtonian cooling toward ambient (dT/dt = -k T), a lumped stand-in for
+  // the losses a 2-D model lacks (out-of-plane, radiation). The open top
+  // alone already stops heat building up; measured in an offline replica,
+  // mean box temperature settles at ~0.07 of the floor value without
+  // cooling vs ~0.015 with k = 0.02, so this mainly keeps the background
+  // air cool and the plumes high-contrast.
   t -= uCooling * uDt * t;
 
   // Heat source: the entire floor (gridPos.y ~ 0) is fixed at

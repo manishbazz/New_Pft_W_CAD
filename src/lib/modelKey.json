@@ -1,0 +1,4 @@
+{
+  "_note": "AES-256-GCM key for the encrypted 3D models in public/projects/*/*.glb.enc. It ships in the JS bundle, so it deters casual downloads only; it is not a secret.",
+  "key": "9f6cac23347c5dedb301686eb9b374f9b24ac9bde57b11b317b93d37d78468a7"
+}
