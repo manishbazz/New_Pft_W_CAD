@@ -19,6 +19,15 @@
  *
  * Responses are cached at the edge for 15 s, so many visitors cost at most
  * ~4 upstream calls a minute.
+ *
+ * "Last played" accuracy (Spotify route): Spotify's recently-played list
+ * only records tracks played to the END. A song you stop or skip midway
+ * never appears there, so the card used to fall back to whatever you last
+ * finished, often hours old. With the optional LAST_SEEN KV binding, the
+ * worker remembers the last track it actually saw in currently-playing,
+ * and "last played" is whichever is newer: that, or recently-played. An
+ * optional cron trigger (every minute) keeps it fresh even when nobody is
+ * visiting the site. Without the binding it behaves exactly as before.
  */
 
 const DEFAULT_ORIGINS = "https://manishbazz.github.io,http://localhost:3000,http://127.0.0.1:3000";
@@ -31,6 +40,8 @@ export interface Env {
   SPOTIFY_REFRESH_TOKEN?: string;
   LASTFM_USER?: string;
   LASTFM_API_KEY?: string;
+  /** Optional KV namespace: remembers the last track seen playing. */
+  LAST_SEEN?: KVNamespace;
 }
 
 export type NowPlaying = {
@@ -48,6 +59,39 @@ export type NowPlaying = {
 
 const SCOPES = "user-read-currently-playing user-read-recently-played";
 const CACHE_SECONDS = 15;
+const LAST_SEEN_KEY = "last-seen";
+/** While the same track keeps playing, refresh its seenAt at most this often
+ * (keeps KV writes well inside the free tier's 1000/day). */
+const LAST_SEEN_REFRESH_MS = 10 * 60_000;
+
+type Seen = Omit<NowPlaying, "isPlaying" | "progressMs" | "playedAt"> & { seenAt: string };
+
+async function readSeen(env: Env): Promise<Seen | null> {
+  if (!env.LAST_SEEN) return null;
+  try {
+    const raw = await env.LAST_SEEN.get(LAST_SEEN_KEY);
+    return raw ? (JSON.parse(raw) as Seen) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Record a track seen in currently-playing (only when it changed, or every
+ * LAST_SEEN_REFRESH_MS while it's still playing). */
+async function rememberSeen(env: Env, now: NowPlaying, prev: Seen | null): Promise<void> {
+  if (!env.LAST_SEEN) return;
+  const same = prev && prev.songUrl === now.songUrl && prev.title === now.title;
+  if (same && Date.now() - Date.parse(prev.seenAt) < LAST_SEEN_REFRESH_MS) return;
+  const seen: Seen = {
+    title: now.title, artist: now.artist, album: now.album, albumArt: now.albumArt,
+    songUrl: now.songUrl, durationMs: now.durationMs, seenAt: new Date().toISOString(),
+  };
+  try {
+    await env.LAST_SEEN.put(LAST_SEEN_KEY, JSON.stringify(seen));
+  } catch (err) {
+    console.error("LAST_SEEN put failed", err);
+  }
+}
 
 let accessToken: { value: string; expires: number } | null = null;
 
@@ -106,7 +150,9 @@ async function fromSpotify(env: Env): Promise<NowPlaying | null> {
     };
     // Podcasts/ads have no track item: fall through to "last played".
     if (data.item && data.currently_playing_type === "track") {
-      return { isPlaying: data.is_playing, progressMs: data.progress_ms ?? undefined, ...trackToJson(data.item) };
+      const result = { isPlaying: data.is_playing, progressMs: data.progress_ms ?? undefined, ...trackToJson(data.item) };
+      if (data.is_playing) await rememberSeen(env, result, await readSeen(env));
+      return result;
     }
   } else if (now.status !== 204) {
     throw new Error(`currently-playing: ${now.status}`);
@@ -116,7 +162,17 @@ async function fromSpotify(env: Env): Promise<NowPlaying | null> {
   if (!recent.ok) throw new Error(`recently-played: ${recent.status}`);
   const r = (await recent.json()) as { items: { track: SpotifyTrack; played_at: string }[] };
   const last = r.items?.[0];
-  return last ? { isPlaying: false, playedAt: last.played_at, ...trackToJson(last.track) } : null;
+  const fromHistory: NowPlaying | null = last
+    ? { isPlaying: false, playedAt: last.played_at, ...trackToJson(last.track) }
+    : null;
+  // Recently-played skips tracks that weren't played to the end; prefer the
+  // last track we saw playing if it's newer.
+  const seen = await readSeen(env);
+  if (seen && (!fromHistory?.playedAt || Date.parse(seen.seenAt) > Date.parse(fromHistory.playedAt))) {
+    const { seenAt, ...rest } = seen;
+    return { isPlaying: false, playedAt: seenAt, ...rest };
+  }
+  return fromHistory;
 }
 
 async function fromLastfm(env: Env): Promise<NowPlaying | null> {
@@ -207,6 +263,17 @@ async function handleSetup(request: Request, env: Env, url: URL): Promise<Respon
 }
 
 export default {
+  /** Optional cron trigger (e.g. every minute): polls Spotify so LAST_SEEN
+   * catches songs even when nobody has the site open. */
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    if (!env.LAST_SEEN || (env.LASTFM_USER && env.LASTFM_API_KEY)) return;
+    try {
+      await fromSpotify(env);
+    } catch (err) {
+      console.error("scheduled poll failed", err);
+    }
+  },
+
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/login" || url.pathname === "/callback") return handleSetup(request, env, url);

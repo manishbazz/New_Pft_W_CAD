@@ -20,3 +20,12 @@ LASTFM_USER = ""
 #   wrangler secret put SPOTIFY_CLIENT_SECRET
 #   wrangler secret put SPOTIFY_REFRESH_TOKEN
 #   wrangler secret put LASTFM_API_KEY        (Last.fm route only)
+
+# Optional, recommended: remember the last song seen playing (see README,
+# "Accurate last played"). Create the namespace, paste its id, uncomment.
+# [[kv_namespaces]]
+# binding = "LAST_SEEN"
+# id = "<your KV namespace id>"
+#
+# [triggers]
+# crons = ["* * * * *"]
