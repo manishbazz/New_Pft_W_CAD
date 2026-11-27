@@ -88,6 +88,28 @@ Basic Information page). When the card stops updating: set `SETUP_MODE` to
 `1`, open `/login`, approve, save the new token as `SPOTIFY_REFRESH_TOKEN`,
 set `SETUP_MODE` back to `0`.
 
+## Accurate "last played" (recommended)
+
+Spotify's recently-played list only records tracks played **to the end**.
+Stop or skip a song midway and it never shows up there, so the card falls
+back to the last song you finished, which can be hours old. To fix that,
+give the worker somewhere to remember the last track it saw playing:
+
+1. Cloudflare dashboard → **Storage & Databases → KV → Create** a namespace
+   (any name, e.g. `now-playing-last-seen`).
+2. **Workers & Pages → now-playing → Settings → Bindings → Add → KV
+   namespace**: variable name `LAST_SEEN`, pick the namespace above.
+3. **Settings → Trigger events (Cron Triggers) → Add**: `* * * * *` (every
+   minute), so songs are caught even when nobody has the site open.
+4. Paste the current `src/index.ts` into the worker editor and **Deploy**.
+
+KV writes happen only when the song changes (or every 10 min while the
+same one plays), well inside the free tier. Without the binding the worker
+behaves exactly as before.
+
+With the CLI instead: uncomment the `kv_namespaces` and `triggers` blocks in
+`wrangler.toml`, fill in the namespace id, `bunx wrangler deploy`.
+
 ## Notes
 
 - `ALLOWED_ORIGINS` in `wrangler.toml` limits which sites may call the
