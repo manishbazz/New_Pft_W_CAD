@@ -105,3 +105,64 @@ test("setup pages are off unless SETUP_MODE=1", async () => {
   expect(on.status).toBe(302);
   expect(on.headers.get("Location")).toContain("redirect_uri=https%3A%2F%2Fw.dev%2Fcallback");
 });
+
+// --- LAST_SEEN: songs stopped midway never reach Spotify's recently-played ---
+function kv() {
+  const m = new Map<string, string>();
+  return { m, get: async (k: string) => m.get(k) ?? null, put: async (k: string, v: string) => void m.set(k, v) };
+}
+const jp = { ...track, name: "Japanese Song", external_urls: { spotify: "https://open.spotify.com/track/jp" } };
+
+test("partly played song is remembered and beats an older recently-played entry", async () => {
+  const LAST_SEEN = kv();
+  const e = { ...env, LAST_SEEN } as unknown as typeof env;
+  routes["https://api.spotify.com/v1/me/player/currently-playing"] = () =>
+    json({ is_playing: true, progress_ms: 40000, currently_playing_type: "track", item: jp });
+  const w = await load();
+  expect((await (await w.fetch(get(), e, ctx)).json()).title).toBe("Japanese Song");
+  expect(LAST_SEEN.m.size).toBe(1);
+
+  // Stopped midway: nothing playing, and recently-played only has an older finished track.
+  store.clear();
+  routes["https://api.spotify.com/v1/me/player/currently-playing"] = () => new Response(null, { status: 204 });
+  routes["https://api.spotify.com/v1/me/player/recently-played"] = () =>
+    json({ items: [{ track, played_at: "2026-01-01T00:00:00.000Z" }] });
+  const r = await (await w.fetch(get(), e, ctx)).json();
+  expect(r.title).toBe("Japanese Song");
+  expect(r.isPlaying).toBe(false);
+  expect(typeof r.playedAt).toBe("string");
+});
+
+test("a newer recently-played entry beats the remembered one", async () => {
+  const LAST_SEEN = kv();
+  LAST_SEEN.m.set("last-seen", JSON.stringify({ title: "Japanese Song", artist: "A", songUrl: "u", seenAt: "2026-01-01T00:00:00.000Z" }));
+  routes["https://api.spotify.com/v1/me/player/currently-playing"] = () => new Response(null, { status: 204 });
+  routes["https://api.spotify.com/v1/me/player/recently-played"] = () =>
+    json({ items: [{ track, played_at: "2026-06-01T00:00:00.000Z" }] });
+  const w = await load();
+  const r = await (await w.fetch(get(), { ...env, LAST_SEEN } as unknown as typeof env, ctx)).json();
+  expect(r.title).toBe("Weightless");
+});
+
+test("same track still playing is not rewritten on every poll; cron records without visitors", async () => {
+  const LAST_SEEN = kv();
+  let puts = 0;
+  const counting = { ...LAST_SEEN, put: async (k: string, v: string) => { puts++; await LAST_SEEN.put(k, v); } };
+  const e = { ...env, LAST_SEEN: counting } as unknown as typeof env;
+  routes["https://api.spotify.com/v1/me/player/currently-playing"] = () =>
+    json({ is_playing: true, progress_ms: 1, currently_playing_type: "track", item: jp });
+  const w = await load();
+  await w.scheduled({} as ScheduledController, e);
+  await w.scheduled({} as ScheduledController, e);
+  await w.scheduled({} as ScheduledController, e);
+  expect(puts).toBe(1);
+  expect(JSON.parse(LAST_SEEN.m.get("last-seen")!).title).toBe("Japanese Song");
+});
+
+test("without the KV binding, behaviour is unchanged", async () => {
+  routes["https://api.spotify.com/v1/me/player/currently-playing"] = () => new Response(null, { status: 204 });
+  routes["https://api.spotify.com/v1/me/player/recently-played"] = () => json({ items: [{ track, played_at: "t" }] });
+  const w = await load();
+  expect((await (await w.fetch(get(), env, ctx)).json()).title).toBe("Weightless");
+  await w.scheduled({} as ScheduledController, env); // no-op, must not throw
+});
