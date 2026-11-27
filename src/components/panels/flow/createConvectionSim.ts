@@ -11,6 +11,7 @@ import {
   type GLTarget,
 } from "./webgl2Helpers";
 import type { FlowController } from "./types";
+import { planSubsteps } from "./substeps";
 
 /**
  * Full-viewport Boussinesq natural-convection background: the entire
@@ -77,7 +78,7 @@ const SOR_OMEGA = 1.8;
 
 const BASE_TIME_SCALE = 18;
 const MAX_SUBSTEP_DT = 0.1;
-/** Fixed-step accumulator cap, so one slow frame can't spiral. */
+/** Max substeps per frame (see substeps.ts), so one slow frame can't spiral. */
 const MAX_STEPS_PER_FRAME = 6;
 
 const BUOYANCY = 2.0;
@@ -547,7 +548,11 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   let obstacleVelX = 0;
   let obstacleVelY = 0;
   let prevObstacleGrid: [number, number] | null = null;
-  let acc = 0;
+  // Obstacle centre used by the passes of the current substep (grid space,
+  // y up). The pointer only updates once per frame, so render() slides
+  // this from last frame's position to the new one across the frame's
+  // substeps instead of jumping the whole way on the first substep.
+  let obstacleGrid: [number, number] | null = null;
   let simTime = 0;
 
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
@@ -561,9 +566,11 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     const halfSize = obstacleHalfSizeGrid();
     const marginX = halfSize / Math.max(NX, 1);
     const marginY = halfSize / Math.max(NY, 1);
-    const cx = clamp(obstacleFracX, marginX, 1 - marginX) * NX;
-    // DOM y is down; grid y is up (see coordinate-convention note above).
-    const cy = (1 - clamp(obstacleFracY, marginY, 1 - marginY)) * NY;
+    const [cx, cy] = obstacleGrid ?? [
+      clamp(obstacleFracX, marginX, 1 - marginX) * NX,
+      // DOM y is down; grid y is up (see coordinate-convention note above).
+      (1 - clamp(obstacleFracY, marginY, 1 - marginY)) * NY,
+    ];
     gl!.uniform2f(u.uObstacleCenterGrid, cx, cy);
     gl!.uniform1f(u.uObstacleHalfSizeGrid, halfSize);
     gl!.uniform1f(u.uObstacleShape, obstacleShape);
@@ -810,19 +817,6 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
   }
 
   function simStep(dt: number) {
-    if (obstacleEnabled) {
-      const c = obstacleCenterGrid();
-      if (prevObstacleGrid) {
-        // Cap so a fast flick can't inject a velocity spike.
-        const cap = 3;
-        obstacleVelX = clamp((c[0] - prevObstacleGrid[0]) / dt, -cap, cap);
-        obstacleVelY = clamp((c[1] - prevObstacleGrid[1]) / dt, -cap, cap);
-      }
-      prevObstacleGrid = c;
-    } else {
-      obstacleVelX = obstacleVelY = 0;
-      prevObstacleGrid = null;
-    }
     applyBoundary();
     applyBuoyancy(dt);
     // NOTE: no applyBoundary() here. The floor's no-slip condition still
@@ -872,15 +866,34 @@ export function createConvectionSim(canvas: HTMLCanvasElement): FlowController |
     const realDt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
 
-    // Fixed-step accumulator: same physics dt at 60, 120 or 144 Hz.
-    acc += realDt * BASE_TIME_SCALE;
-    let steps = 0;
-    while (acc >= MAX_SUBSTEP_DT && steps < MAX_STEPS_PER_FRAME) {
-      simStep(MAX_SUBSTEP_DT);
-      acc -= MAX_SUBSTEP_DT;
-      steps++;
+    // Equal substeps per frame (see substeps.ts). The old fixed-dt
+    // accumulator ran an uneven number of steps per frame on 120/144 Hz
+    // displays, and the obstacle velocity was (pointer move) / dt on the
+    // first substep and 0 on the rest: a velocity spike every frame,
+    // which the speed-contour render showed as pulsing.
+    const plan = planSubsteps(realDt * BASE_TIME_SCALE, MAX_SUBSTEP_DT, MAX_STEPS_PER_FRAME);
+    const target = obstacleEnabled ? obstacleCenterGrid() : null;
+    const from = target && prevObstacleGrid ? prevObstacleGrid : target;
+    if (target && from && plan.n > 0) {
+      // Moving-wall velocity: the frame's whole displacement over the
+      // frame's whole sim time, constant across its substeps. Capped so a
+      // fast flick can't inject a velocity spike.
+      const cap = 3;
+      const span = plan.n * plan.dt;
+      obstacleVelX = clamp((target[0] - from[0]) / span, -cap, cap);
+      obstacleVelY = clamp((target[1] - from[1]) / span, -cap, cap);
+    } else {
+      obstacleVelX = obstacleVelY = 0;
     }
-    if (steps === MAX_STEPS_PER_FRAME) acc = 0;
+    for (let i = 0; i < plan.n; i++) {
+      const f = (i + 1) / plan.n;
+      obstacleGrid = target && from
+        ? [from[0] + (target[0] - from[0]) * f, from[1] + (target[1] - from[1]) * f]
+        : null;
+      simStep(plan.dt);
+    }
+    if (plan.n > 0) prevObstacleGrid = target;
+    obstacleGrid = target;
 
     drawFrame();
     raf = requestAnimationFrame(render);

@@ -33,6 +33,7 @@ import {
   FLOW_TIME_SCALE,
   FLOW_U_INF,
 } from "./flowParams";
+import { followFraction, planSubsteps } from "./substeps";
 
 /**
  * WebGL2 (GPU) backend for the About-page cylinder wake: incompressible
@@ -316,7 +317,6 @@ export function createGpuFlowSim(
   let raf = 0;
   let running = false;
   let last = performance.now();
-  let acc = 0;
   let simTime = 0;
   let frameCount = 0;
   let view: FlowView = "dye";
@@ -441,8 +441,11 @@ export function createGpuFlowSim(
     const prevX = bodyFracX * NX;
     const prevY = bodyFracY * NY;
     if (hovering) {
-      bodyFracX += (targetFracX - bodyFracX) * 0.12;
-      bodyFracY += (targetFracY - bodyFracY) * 0.12;
+      // 12 % of the remaining distance per 0.4 time units, whatever dt is
+      // (dt now varies slightly with the display's frame time).
+      const k = followFraction(0.12, FLOW_MAX_SUBSTEP_DT, dt);
+      bodyFracX += (targetFracX - bodyFracX) * k;
+      bodyFracY += (targetFracY - bodyFracY) * k;
     }
     bodyVelX = (bodyFracX * NX - prevX) / dt;
     bodyVelY = (bodyFracY * NY - prevY) / dt;
@@ -521,16 +524,11 @@ export function createGpuFlowSim(
     if (!running) return;
     const realDt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
-    // Fixed-step accumulator: the physics advances by the same dt whatever
-    // the display refresh rate (60 / 120 / 144 Hz all look identical).
-    acc += realDt * FLOW_TIME_SCALE;
-    let steps = 0;
-    while (acc >= FLOW_MAX_SUBSTEP_DT && steps < FLOW_MAX_STEPS_PER_FRAME) {
-      step(FLOW_MAX_SUBSTEP_DT);
-      acc -= FLOW_MAX_SUBSTEP_DT;
-      steps++;
-    }
-    if (steps === FLOW_MAX_STEPS_PER_FRAME) acc = 0;
+    // Equal substeps per frame (see substeps.ts): a fixed-dt accumulator
+    // gave 1,2,1,2,... steps per frame at 60 Hz, which showed as pulsing.
+    const plan = planSubsteps(realDt * FLOW_TIME_SCALE, FLOW_MAX_SUBSTEP_DT, FLOW_MAX_STEPS_PER_FRAME);
+    const steps = plan.n;
+    for (let i = 0; i < steps; i++) step(plan.dt);
     // Read the probe every 4th frame: a GPU->CPU readback stalls the
     // pipeline, and ~15 samples/s is plenty for a ~2 s shedding period
     // (crossing times are interpolated, see createStrouhalMeter).

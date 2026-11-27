@@ -37,7 +37,7 @@ export const FLOW_SOR_OMEGA = 1.8;
 /** Simulation time units advanced per real second, and max substep. */
 export const FLOW_TIME_SCALE = 35;
 export const FLOW_MAX_SUBSTEP_DT = 0.4;
-/** Fixed-step accumulator cap, so a slow frame can't spiral. */
+/** Max substeps per frame (see substeps.ts), so a slow frame can't spiral. */
 export const FLOW_MAX_STEPS_PER_FRAME = 4;
 
 /** Dye stripes injected at the inlet. */
